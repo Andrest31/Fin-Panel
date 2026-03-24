@@ -92,9 +92,14 @@ export function OperationDetailsPage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
-        <Button component={RouterLink} to="/operations" variant="outlined">
-          Back to queue
+      <Stack spacing={1} sx={{ mb: 3 }}>
+        <Button
+          component={RouterLink}
+          to="/operations"
+          variant="text"
+          sx={{ alignSelf: 'flex-start', px: 0 }}
+        >
+          ← Back to queue
         </Button>
 
         <Typography variant="h4">Operation Details</Typography>
