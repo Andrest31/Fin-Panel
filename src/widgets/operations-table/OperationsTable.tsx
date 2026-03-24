@@ -1,38 +1,91 @@
-import { Chip, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
-import { Link } from 'react-router-dom';
-import { Operation } from '@/entities/operation/model/types';
+import {
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import type { Operation } from '@/entities/operation/api/getOperations';
+import { RiskLevelChip } from '@/entities/operation/ui/RiskLevelChip';
+import { StatusChip } from '@/entities/operation/ui/StatusChip';
 
-interface OperationsTableProps {
-  items: Operation[];
+type OperationsTableProps = {
+  operations: Operation[];
+};
+
+function formatAmount(amount: number, currency: string) {
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
-export function OperationsTable({ items }: OperationsTableProps) {
+export function OperationsTable({ operations }: OperationsTableProps) {
   return (
-    <TableContainer component={Paper}>
+    <TableContainer component={Paper} variant="outlined">
       <Table>
         <TableHead>
           <TableRow>
-            <TableCell>ID</TableCell>
             <TableCell>Merchant</TableCell>
             <TableCell>Amount</TableCell>
             <TableCell>Status</TableCell>
             <TableCell>Risk</TableCell>
-            <TableCell>Country</TableCell>
+            <TableCell>Location</TableCell>
+            <TableCell>Payment</TableCell>
+            <TableCell>Updated</TableCell>
           </TableRow>
         </TableHead>
+
         <TableBody>
-          {items.map((item) => (
-            <TableRow key={item.id} hover>
+          {operations.map((operation) => (
+            <TableRow
+              key={operation.id}
+              hover
+              sx={{
+                cursor: 'pointer',
+                '&:last-child td, &:last-child th': { border: 0 },
+              }}
+            >
               <TableCell>
-                <Link to={`/operations/${item.id}`}>{item.id}</Link>
+                <Typography
+                  component={RouterLink}
+                  to={`/operations/${operation.id}`}
+                  sx={{
+                    color: 'inherit',
+                    textDecoration: 'none',
+                    fontWeight: 500,
+                    '&:hover': { textDecoration: 'underline' },
+                  }}
+                >
+                  {operation.merchant}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {operation.id}
+                </Typography>
               </TableCell>
-              <TableCell>{item.merchant}</TableCell>
-              <TableCell>{item.amount.toLocaleString('ru-RU')} {item.currency}</TableCell>
-              <TableCell>{item.status}</TableCell>
+
+              <TableCell>{formatAmount(operation.amount, operation.currency)}</TableCell>
+
               <TableCell>
-                <Chip label={`${item.riskLevel} · ${item.score}`} size="small" />
+                <StatusChip status={operation.status} />
               </TableCell>
-              <TableCell>{item.country}</TableCell>
+
+              <TableCell>
+                <RiskLevelChip riskLevel={operation.riskLevel} />
+              </TableCell>
+
+              <TableCell>
+                {operation.country} / {operation.city}
+              </TableCell>
+
+              <TableCell>{operation.paymentMethod}</TableCell>
+
+              <TableCell>{new Date(operation.updatedAt).toLocaleString()}</TableCell>
             </TableRow>
           ))}
         </TableBody>
