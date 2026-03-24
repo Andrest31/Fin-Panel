@@ -1,4 +1,4 @@
-import { Alert, Box, Chip, Snackbar, Stack, Typography } from '@mui/material';
+import { Alert, Box, Chip, Snackbar, Stack, TablePagination, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -54,6 +54,8 @@ export function OperationsListPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingBulkStatus, setPendingBulkStatus] = useState<OperationStatus | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const queryClient = useQueryClient();
   const pollingInterval = import.meta.env.MODE === 'test' ? false : 10000;
@@ -72,6 +74,12 @@ export function OperationsListPage() {
   const filteredOperations = useMemo(() => {
     return applyFiltersAndSort(data ?? [], filters);
   }, [data, filters]);
+
+  const paginatedOperations = useMemo(() => {
+    const start = page * rowsPerPage;
+    const end = start + rowsPerPage;
+    return filteredOperations.slice(start, end);
+  }, [filteredOperations, page, rowsPerPage]);
 
   const bulkMutation = useMutation({
     mutationFn: ({
@@ -109,11 +117,13 @@ export function OperationsListPage() {
   const handleFiltersChange = (nextFilters: OperationsFilterValues) => {
     setSearchParams(toOperationsSearchParams(nextFilters));
     setSelectedIds([]);
+    setPage(0);
   };
 
   const handleReset = () => {
     setSearchParams(toOperationsSearchParams(defaultOperationsFilters));
     setSelectedIds([]);
+    setPage(0);
   };
 
   const handleToggleOne = (id: string) => {
@@ -135,13 +145,24 @@ export function OperationsListPage() {
     });
   };
 
+  const handleChangePage = (_event: unknown, nextPage: number) => {
+    setPage(nextPage);
+    setSelectedIds([]);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(Number(event.target.value));
+    setPage(0);
+    setSelectedIds([]);
+  };
+
   const visibleSelectedIds = selectedIds.filter((id) =>
-    filteredOperations.some((operation) => operation.id === id),
+    paginatedOperations.some((operation) => operation.id === id),
   );
 
   const selectedOperationsLabel =
     visibleSelectedIds.length === 1
-      ? filteredOperations.find((item) => item.id === visibleSelectedIds[0])?.merchant ?? 'operation'
+      ? paginatedOperations.find((item) => item.id === visibleSelectedIds[0])?.merchant ?? 'operation'
       : `${visibleSelectedIds.length} operations`;
 
   return (
@@ -167,13 +188,14 @@ export function OperationsListPage() {
 
       <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
         <Chip label={`Found: ${filteredOperations.length}`} />
+        <Chip label={`Page: ${page + 1}`} />
         <Chip label={`Selected: ${visibleSelectedIds.length}`} />
         <Chip label={`Sort: ${filters.sortBy}`} />
         <Chip label={`Order: ${filters.order}`} />
         {isFetching && !isLoading ? <Chip label="Refreshing..." color="warning" /> : null}
       </Stack>
 
-      {isLoading && <OperationsTableSkeleton />}
+      {isLoading && <OperationsTableSkeleton rows={rowsPerPage} />}
 
       {isError && (
         <Alert severity="error">
@@ -186,12 +208,24 @@ export function OperationsListPage() {
       )}
 
       {!isLoading && !isError && filteredOperations.length > 0 && (
-        <OperationsTable
-          operations={filteredOperations}
-          selectedIds={visibleSelectedIds}
-          onToggleOne={handleToggleOne}
-          onToggleAll={handleToggleAll}
-        />
+        <>
+          <OperationsTable
+            operations={paginatedOperations}
+            selectedIds={visibleSelectedIds}
+            onToggleOne={handleToggleOne}
+            onToggleAll={handleToggleAll}
+          />
+
+          <TablePagination
+            component="div"
+            count={filteredOperations.length}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[5, 10, 25]}
+          />
+        </>
       )}
 
       <DecisionDialog
