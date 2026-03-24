@@ -1,35 +1,44 @@
-import { Alert, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, List, ListItem, ListItemText, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { getOperations } from '@/entities/operation/api/getOperations';
-import { OperationsTable } from '@/widgets/operations-table/OperationsTable';
 
 export function OperationsListPage() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['operations'],
     queryFn: getOperations,
-    refetchInterval: 10_000,
+    refetchInterval: 10000,
   });
 
   return (
-    <Stack spacing={3}>
-      <div>
-        <Typography variant="h4">Operations Queue</Typography>
-        <Typography color="text.secondary" sx={{ mt: 1 }}>
-          Базовый экран очереди операций. Дальше сюда добавим фильтры, сортировку и bulk-actions.
-        </Typography>
-      </div>
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" sx={{ mb: 1 }}>
+        Operations Queue
+      </Typography>
 
-      {isLoading && <Alert severity="info">Загружаем операции...</Alert>}
-      {isError && <Alert severity="error">{(error as Error).message}</Alert>}
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+        Базовый экран очереди операций. Дальше сюда добавим фильтры, сортировку и bulk-actions.
+      </Typography>
+
+      {isLoading && <CircularProgress />}
+
+      {isError && (
+        <Alert severity="error">
+          {error instanceof Error ? error.message : 'Unknown error'}
+        </Alert>
+      )}
 
       {data && (
-        <Paper sx={{ p: 2, display: 'grid', gap: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            Total: {data.total} · Refreshed at: {new Date(data.refreshedAt).toLocaleTimeString('ru-RU')}
-          </Typography>
-          <OperationsTable items={data.items} />
-        </Paper>
+        <List>
+          {data.map((operation) => (
+            <ListItem key={operation.id} divider>
+              <ListItemText
+                primary={operation.merchant}
+                secondary={`${operation.amount} ${operation.currency} • ${operation.status} • risk: ${operation.riskLevel}`}
+              />
+            </ListItem>
+          ))}
+        </List>
       )}
-    </Stack>
+    </Box>
   );
 }
