@@ -15,8 +15,8 @@ export function MetricsCards({ metrics }: MetricsCardsProps) {
   return (
     <Grid container spacing={2}>
       {metrics.map((metric) => (
-        <Grid key={metric.label} size={{ xs: 12, md: 4 }}>
-          <Paper sx={{ p: 2 }}>
+        <Grid key={metric.label} size={{ xs: 12, md: 4, lg: 2 }}>
+          <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="body2" color="text.secondary">
               {metric.label}
             </Typography>
