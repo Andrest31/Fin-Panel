@@ -35,6 +35,7 @@ export const operationHistoryEventSchema = z.object({
   timestamp: z.string(),
   actor: z.string(),
   comment: z.string(),
+  reason: z.string().optional(),
 });
 
 export const operationDetailsSchema = operationListItemSchema.extend({
@@ -45,11 +46,15 @@ export const operationsResponseSchema = z.array(operationListItemSchema);
 
 export const updateOperationStatusBodySchema = z.object({
   status: operationStatusSchema,
+  reason: z.string().trim().min(1, 'Reason is required'),
+  comment: z.string().trim().min(3, 'Comment is required'),
 });
 
 export const bulkUpdateOperationStatusBodySchema = z.object({
   ids: z.array(z.string()).min(1),
   status: operationStatusSchema,
+  reason: z.string().trim().min(1, 'Reason is required'),
+  comment: z.string().trim().min(3, 'Comment is required'),
 });
 
 export const bulkUpdateOperationStatusResponseSchema = z.object({
@@ -64,6 +69,12 @@ export type OperationStatus = z.infer<typeof operationStatusSchema>;
 export type BulkUpdateOperationStatusResponse = z.infer<
   typeof bulkUpdateOperationStatusResponseSchema
 >;
+
+export type OperationDecisionPayload = {
+  status: OperationStatus;
+  reason: string;
+  comment: string;
+};
 
 async function parseJsonResponse<T>(response: Response, schema: z.ZodSchema<T>): Promise<T> {
   const text = await response.text();
@@ -103,9 +114,9 @@ export async function getOperationById(id: string): Promise<OperationDetails> {
 
 export async function updateOperationStatus(
   id: string,
-  status: OperationStatus,
+  payload: OperationDecisionPayload,
 ): Promise<OperationDetails> {
-  const requestBody = updateOperationStatusBodySchema.parse({ status });
+  const requestBody = updateOperationStatusBodySchema.parse(payload);
 
   const response = await fetch(`/api/operations/${id}/status`, {
     method: 'PATCH',
@@ -120,9 +131,12 @@ export async function updateOperationStatus(
 
 export async function bulkUpdateOperationStatus(
   ids: string[],
-  status: OperationStatus,
+  payload: OperationDecisionPayload,
 ): Promise<BulkUpdateOperationStatusResponse> {
-  const requestBody = bulkUpdateOperationStatusBodySchema.parse({ ids, status });
+  const requestBody = bulkUpdateOperationStatusBodySchema.parse({
+    ids,
+    ...payload,
+  });
 
   const response = await fetch('/api/operations/bulk-status', {
     method: 'PATCH',

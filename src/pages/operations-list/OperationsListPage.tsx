@@ -8,6 +8,7 @@ import {
   type Operation,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
+import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
 import { getOperationsFiltersFromSearchParams, toOperationsSearchParams } from '@/features/operation-filters/lib/searchParams';
 import { defaultOperationsFilters, type OperationsFilterValues } from '@/features/operation-filters/model/types';
 import { OperationsFilters } from '@/features/operation-filters/ui/OperationsFilters';
@@ -51,6 +52,7 @@ export function OperationsListPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [pendingBulkStatus, setPendingBulkStatus] = useState<OperationStatus | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -70,8 +72,17 @@ export function OperationsListPage() {
   }, [data, filters]);
 
   const bulkMutation = useMutation({
-    mutationFn: ({ ids, status }: { ids: string[]; status: OperationStatus }) =>
-      bulkUpdateOperationStatus(ids, status),
+    mutationFn: ({
+      ids,
+      status,
+      reason,
+      comment,
+    }: {
+      ids: string[];
+      status: OperationStatus;
+      reason: string;
+      comment: string;
+    }) => bulkUpdateOperationStatus(ids, { status, reason, comment }),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ['operations'] });
       await Promise.all(
@@ -81,6 +92,7 @@ export function OperationsListPage() {
       );
 
       setSelectedIds([]);
+      setPendingBulkStatus(null);
       setSuccessMessage(`Обновлено операций: ${result.updatedIds.length}`);
       setErrorMessage('');
     },
@@ -104,9 +116,7 @@ export function OperationsListPage() {
 
   const handleToggleOne = (id: string) => {
     setSelectedIds((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id],
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
     );
   };
 
@@ -123,20 +133,14 @@ export function OperationsListPage() {
     });
   };
 
-  const handleBulkApply = (status: OperationStatus) => {
-    if (selectedIds.length === 0) {
-      return;
-    }
-
-    bulkMutation.mutate({
-      ids: selectedIds,
-      status,
-    });
-  };
-
   const visibleSelectedIds = selectedIds.filter((id) =>
     filteredOperations.some((operation) => operation.id === id),
   );
+
+  const selectedOperationsLabel =
+    visibleSelectedIds.length === 1
+      ? filteredOperations.find((item) => item.id === visibleSelectedIds[0])?.merchant ?? 'operation'
+      : `${visibleSelectedIds.length} operations`;
 
   return (
     <Box sx={{ p: 3 }}>
@@ -148,17 +152,13 @@ export function OperationsListPage() {
         Очередь операций для анализа: поиск, фильтрация, сортировка и регулярное обновление данных.
       </Typography>
 
-      <OperationsFilters
-        value={filters}
-        onChange={handleFiltersChange}
-        onReset={handleReset}
-      />
+      <OperationsFilters value={filters} onChange={handleFiltersChange} onReset={handleReset} />
 
       {visibleSelectedIds.length > 0 && (
         <BulkActionsBar
           selectedCount={visibleSelectedIds.length}
           isPending={bulkMutation.isPending}
-          onApply={handleBulkApply}
+          onApply={setPendingBulkStatus}
           onReset={() => setSelectedIds([])}
         />
       )}
@@ -191,6 +191,28 @@ export function OperationsListPage() {
           onToggleAll={handleToggleAll}
         />
       )}
+
+      <DecisionDialog
+        open={Boolean(pendingBulkStatus) && visibleSelectedIds.length > 0}
+        targetLabel={selectedOperationsLabel}
+        status={pendingBulkStatus}
+        isPending={bulkMutation.isPending}
+        onClose={() => {
+          if (!bulkMutation.isPending) {
+            setPendingBulkStatus(null);
+          }
+        }}
+        onSubmit={({ reason, comment }) => {
+          if (!pendingBulkStatus || visibleSelectedIds.length === 0) return;
+
+          bulkMutation.mutate({
+            ids: visibleSelectedIds,
+            status: pendingBulkStatus,
+            reason,
+            comment,
+          });
+        }}
+      />
 
       <Snackbar
         open={Boolean(successMessage)}

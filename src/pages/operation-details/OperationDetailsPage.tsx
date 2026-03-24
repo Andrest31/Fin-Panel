@@ -23,6 +23,7 @@ import {
   updateOperationStatus,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
+import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
 
 function getRiskColor(riskLevel: 'low' | 'medium' | 'high') {
   if (riskLevel === 'high') return 'error';
@@ -43,6 +44,7 @@ export function OperationDetailsPage() {
 
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [pendingStatus, setPendingStatus] = useState<OperationStatus | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['operation', id],
@@ -51,13 +53,15 @@ export function OperationDetailsPage() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: (nextStatus: OperationStatus) => updateOperationStatus(id, nextStatus),
+    mutationFn: (payload: { status: OperationStatus; reason: string; comment: string }) =>
+      updateOperationStatus(id, payload),
     onSuccess: async (updatedOperation) => {
       queryClient.setQueryData(['operation', id], updatedOperation);
       await queryClient.invalidateQueries({ queryKey: ['operations'] });
       await queryClient.invalidateQueries({ queryKey: ['operation', id] });
       setSuccessMessage(`Статус обновлён: ${updatedOperation.status}`);
       setErrorMessage('');
+      setPendingStatus(null);
     },
     onError: (mutationError) => {
       setErrorMessage(
@@ -67,8 +71,23 @@ export function OperationDetailsPage() {
     },
   });
 
-  const handleStatusChange = (nextStatus: OperationStatus) => {
-    statusMutation.mutate(nextStatus);
+  const handleOpenDecision = (status: OperationStatus) => {
+    setPendingStatus(status);
+  };
+
+  const handleSubmitDecision = (payload: { reason: string; comment: string }) => {
+    if (!pendingStatus) return;
+
+    statusMutation.mutate({
+      status: pendingStatus,
+      reason: payload.reason,
+      comment: payload.comment,
+    });
+  };
+
+  const handleCloseDecision = () => {
+    if (statusMutation.isPending) return;
+    setPendingStatus(null);
   };
 
   return (
@@ -204,7 +223,7 @@ export function OperationDetailsPage() {
                       disableGutters
                     >
                       <ListItemText
-                        primary={`${event.type} • ${event.actor}`}
+                        primary={`${event.type} • ${event.actor}${event.reason ? ` • ${event.reason}` : ''}`}
                         secondary={`${new Date(event.timestamp).toLocaleString()} • ${event.comment}`}
                       />
                     </ListItem>
@@ -251,16 +270,16 @@ export function OperationDetailsPage() {
                   <Button
                     variant="contained"
                     disabled={statusMutation.isPending || data.status === 'approved'}
-                    onClick={() => handleStatusChange('approved')}
+                    onClick={() => handleOpenDecision('approved')}
                   >
-                    {statusMutation.isPending ? 'Updating...' : 'Approve'}
+                    Approve
                   </Button>
 
                   <Button
                     variant="outlined"
                     color="warning"
                     disabled={statusMutation.isPending || data.status === 'in_review'}
-                    onClick={() => handleStatusChange('in_review')}
+                    onClick={() => handleOpenDecision('in_review')}
                   >
                     Send to review
                   </Button>
@@ -269,7 +288,7 @@ export function OperationDetailsPage() {
                     variant="outlined"
                     color="error"
                     disabled={statusMutation.isPending || data.status === 'blocked'}
-                    onClick={() => handleStatusChange('blocked')}
+                    onClick={() => handleOpenDecision('blocked')}
                   >
                     Block operation
                   </Button>
@@ -285,6 +304,15 @@ export function OperationDetailsPage() {
           </Grid>
         </Grid>
       )}
+
+      <DecisionDialog
+        open={Boolean(pendingStatus) && Boolean(data)}
+        targetLabel={data?.merchant ?? 'operation'}
+        status={pendingStatus}
+        isPending={statusMutation.isPending}
+        onClose={handleCloseDecision}
+        onSubmit={handleSubmitDecision}
+      />
 
       <Snackbar
         open={Boolean(successMessage)}

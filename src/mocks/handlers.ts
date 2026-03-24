@@ -8,6 +8,7 @@ type OperationHistoryEvent = {
   timestamp: string;
   actor: string;
   comment: string;
+  reason?: string;
 };
 
 type OperationRecord = {
@@ -28,6 +29,12 @@ type OperationRecord = {
   reviewer: string | null;
   flagReasons: string[];
   history: OperationHistoryEvent[];
+};
+
+type StatusUpdateRequest = {
+  status?: OperationStatus;
+  reason?: string;
+  comment?: string;
 };
 
 const operations: OperationRecord[] = [
@@ -96,6 +103,7 @@ const operations: OperationRecord[] = [
         timestamp: '2026-03-24T10:19:00.000Z',
         actor: 'analyst_01',
         comment: 'No suspicious signals found',
+        reason: 'trusted_pattern',
       },
     ],
   },
@@ -130,6 +138,7 @@ const operations: OperationRecord[] = [
         timestamp: '2026-03-24T10:25:00.000Z',
         actor: 'system',
         comment: 'Sent to analyst review',
+        reason: 'merchant_pattern',
       },
     ],
   },
@@ -160,7 +169,7 @@ function getActionMeta(status: OperationStatus) {
   if (status === 'approved') {
     return {
       eventType: 'approved',
-      comment: 'Operation approved by analyst',
+      defaultComment: 'Operation approved by analyst',
       reviewer: 'analyst_99',
     };
   }
@@ -168,7 +177,7 @@ function getActionMeta(status: OperationStatus) {
   if (status === 'blocked') {
     return {
       eventType: 'blocked',
-      comment: 'Operation blocked by analyst',
+      defaultComment: 'Operation blocked by analyst',
       reviewer: 'analyst_99',
     };
   }
@@ -176,19 +185,24 @@ function getActionMeta(status: OperationStatus) {
   if (status === 'in_review') {
     return {
       eventType: 'sent_to_review',
-      comment: 'Operation sent to manual review',
+      defaultComment: 'Operation sent to manual review',
       reviewer: 'analyst_99',
     };
   }
 
   return {
     eventType: 'status_changed',
-    comment: `Status changed to ${status}`,
+    defaultComment: `Status changed to ${status}`,
     reviewer: 'analyst_99',
   };
 }
 
-function applyStatusChange(operation: OperationRecord, nextStatus: OperationStatus) {
+function applyStatusChange(
+  operation: OperationRecord,
+  nextStatus: OperationStatus,
+  reason?: string,
+  comment?: string,
+) {
   const now = new Date().toISOString();
   const actionMeta = getActionMeta(nextStatus);
 
@@ -200,7 +214,8 @@ function applyStatusChange(operation: OperationRecord, nextStatus: OperationStat
     type: actionMeta.eventType,
     timestamp: now,
     actor: actionMeta.reviewer,
-    comment: actionMeta.comment,
+    comment: comment?.trim() || actionMeta.defaultComment,
+    reason: reason?.trim() || undefined,
   });
 }
 
@@ -226,14 +241,14 @@ export const handlers = [
       return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
     }
 
-    const body = (await request.json()) as { status?: OperationStatus };
+    const body = (await request.json()) as StatusUpdateRequest;
     const nextStatus = body.status;
 
     if (!nextStatus) {
       return HttpResponse.json({ message: 'Status is required' }, { status: 400 });
     }
 
-    applyStatusChange(operation, nextStatus);
+    applyStatusChange(operation, nextStatus, body.reason, body.comment);
 
     return HttpResponse.json(operation);
   }),
@@ -242,6 +257,8 @@ export const handlers = [
     const body = (await request.json()) as {
       ids?: string[];
       status?: OperationStatus;
+      reason?: string;
+      comment?: string;
     };
 
     if (!Array.isArray(body.ids) || body.ids.length === 0) {
@@ -256,7 +273,7 @@ export const handlers = [
 
     operations.forEach((operation) => {
       if (updatedIds.has(operation.id)) {
-        applyStatusChange(operation, body.status as OperationStatus);
+        applyStatusChange(operation, body.status as OperationStatus, body.reason, body.comment);
       }
     });
 
