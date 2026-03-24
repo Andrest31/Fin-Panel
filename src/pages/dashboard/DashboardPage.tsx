@@ -15,19 +15,46 @@ import {
 import Grid from '@mui/material/Grid';
 import { useQuery } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { getOperations, type Operation } from '@/entities/operation/api/getOperations';
 import { RiskLevelChip } from '@/entities/operation/ui/RiskLevelChip';
 import { StatusChip } from '@/entities/operation/ui/StatusChip';
 import { MetricsCards } from '@/widgets/metrics-cards/MetricsCards';
 
-type StatusCount = {
-  label: string;
+type ChartItem = {
+  name: string;
   value: number;
 };
 
 type FlagReasonStat = {
   reason: string;
   count: number;
+};
+
+const STATUS_COLORS: Record<Operation['status'], string> = {
+  new: '#90a4ae',
+  in_review: '#ffb300',
+  approved: '#43a047',
+  blocked: '#e53935',
+  flagged: '#8e24aa',
+};
+
+const RISK_COLORS: Record<Operation['riskLevel'], string> = {
+  low: '#43a047',
+  medium: '#ffb300',
+  high: '#e53935',
 };
 
 function formatPercent(value: number) {
@@ -53,28 +80,28 @@ function getDashboardMetrics(operations: Operation[]) {
   };
 }
 
-function getStatusBreakdown(operations: Operation[]): StatusCount[] {
-  const counts = new Map<string, number>();
+function getStatusBreakdown(operations: Operation[]): ChartItem[] {
+  const counts = new Map<Operation['status'], number>();
 
   operations.forEach((operation) => {
     counts.set(operation.status, (counts.get(operation.status) ?? 0) + 1);
   });
 
-  return Array.from(counts.entries()).map(([label, value]) => ({
-    label,
+  return Array.from(counts.entries()).map(([name, value]) => ({
+    name,
     value,
   }));
 }
 
-function getRiskBreakdown(operations: Operation[]): StatusCount[] {
-  const counts = new Map<string, number>();
+function getRiskBreakdown(operations: Operation[]): ChartItem[] {
+  const counts = new Map<Operation['riskLevel'], number>();
 
   operations.forEach((operation) => {
     counts.set(operation.riskLevel, (counts.get(operation.riskLevel) ?? 0) + 1);
   });
 
-  return Array.from(counts.entries()).map(([label, value]) => ({
-    label,
+  return Array.from(counts.entries()).map(([name, value]) => ({
+    name,
     value,
   }));
 }
@@ -160,55 +187,70 @@ export function DashboardPage() {
           <MetricsCards metrics={metricCards} />
 
           <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid size={{ xs: 12, lg: 4 }}>
+            <Grid size={{ xs: 12, xl: 6 }}>
               <Card sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2 }}>
-                    Status breakdown
+                    Status distribution
                   </Typography>
 
-                  <Stack spacing={1.5}>
-                    {statusBreakdown.map((item) => (
-                      <Stack
-                        key={item.label}
-                        direction="row"
-                        justifyContent="space-between"
-                        alignItems="center"
-                      >
-                        <StatusChip status={item.label as Operation['status']} />
-                        <Typography variant="body1">{item.value}</Typography>
-                      </Stack>
-                    ))}
-                  </Stack>
+                  <Box sx={{ width: '100%', height: 320 }}>
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie
+                          data={statusBreakdown}
+                          dataKey="value"
+                          nameKey="name"
+                          outerRadius={100}
+                          label
+                        >
+                          {statusBreakdown.map((entry) => (
+                            <Cell
+                              key={entry.name}
+                              fill={STATUS_COLORS[entry.name as Operation['status']]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </Box>
                 </CardContent>
               </Card>
             </Grid>
 
-            <Grid size={{ xs: 12, lg: 4 }}>
+            <Grid size={{ xs: 12, xl: 6 }}>
               <Card sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2 }}>
-                    Risk breakdown
+                    Risk distribution
                   </Typography>
 
-                  <Stack spacing={1.5}>
-                    {riskBreakdown.map((item) => (
-                      <Stack
-                        key={item.label}
-                        direction="row"
-                        justifyContent="space-between"
-                        alignItems="center"
-                      >
-                        <RiskLevelChip riskLevel={item.label as Operation['riskLevel']} />
-                        <Typography variant="body1">{item.value}</Typography>
-                      </Stack>
-                    ))}
-                  </Stack>
+                  <Box sx={{ width: '100%', height: 320 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={riskBreakdown}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="value" name="Operations">
+                          {riskBreakdown.map((entry) => (
+                            <Cell
+                              key={entry.name}
+                              fill={RISK_COLORS[entry.name as Operation['riskLevel']]}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Box>
                 </CardContent>
               </Card>
             </Grid>
 
-            <Grid size={{ xs: 12, lg: 4 }}>
+            <Grid size={{ xs: 12, xl: 6 }}>
               <Card sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2 }}>
@@ -216,19 +258,24 @@ export function DashboardPage() {
                   </Typography>
 
                   {topFlagReasons.length > 0 ? (
-                    <Stack spacing={1.5}>
-                      {topFlagReasons.map((item) => (
-                        <Stack
-                          key={item.reason}
-                          direction="row"
-                          justifyContent="space-between"
-                          alignItems="center"
+                    <Box sx={{ width: '100%', height: 320 }}>
+                      <ResponsiveContainer>
+                        <BarChart
+                          data={topFlagReasons.map((item) => ({
+                            name: item.reason,
+                            value: item.count,
+                          }))}
+                          layout="vertical"
                         >
-                          <Typography variant="body2">{item.reason}</Typography>
-                          <Chip label={item.count} size="small" />
-                        </Stack>
-                      ))}
-                    </Stack>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis type="number" allowDecimals={false} />
+                          <YAxis type="category" dataKey="name" width={130} />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="value" name="Count" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Box>
                   ) : (
                     <Typography variant="body2" color="text.secondary">
                       No flag reasons yet
@@ -238,8 +285,8 @@ export function DashboardPage() {
               </Card>
             </Grid>
 
-            <Grid size={{ xs: 12 }}>
-              <Card>
+            <Grid size={{ xs: 12, xl: 6 }}>
+              <Card sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2 }}>
                     Latest updated operations
