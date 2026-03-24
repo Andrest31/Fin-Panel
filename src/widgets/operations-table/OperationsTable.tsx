@@ -48,8 +48,14 @@ export function OperationsTable({
   };
 
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table>
+    <TableContainer
+      component={Paper}
+      variant="outlined"
+      sx={{
+        maxHeight: 620,
+      }}
+    >
+      <Table stickyHeader>
         <TableHead>
           <TableRow>
             <TableCell padding="checkbox">

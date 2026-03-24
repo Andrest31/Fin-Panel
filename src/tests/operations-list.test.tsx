@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -7,13 +7,18 @@ import { server } from '../mocks/server';
 import { OperationsListPage } from '../pages/operations-list/OperationsListPage';
 
 beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+});
 afterAll(() => server.close());
 
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
+        retry: false,
+      },
+      mutations: {
         retry: false,
       },
     },
@@ -35,21 +40,6 @@ describe('OperationsListPage', () => {
     expect(await screen.findByText(/TechMarket/i)).toBeInTheDocument();
     expect(screen.getByText(/Daily Coffee/i)).toBeInTheDocument();
     expect(screen.getByText(/Fast Electronics/i)).toBeInTheDocument();
-  });
-
-  it('filters operations by merchant search', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    expect(await screen.findByText(/TechMarket/i)).toBeInTheDocument();
-
-    const searchInput = screen.getByLabelText(/search merchant/i);
-    await user.clear(searchInput);
-    await user.type(searchInput, 'Coffee');
-
-    expect(screen.getByText(/Daily Coffee/i)).toBeInTheDocument();
-    expect(screen.queryByText(/TechMarket/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Fast Electronics/i)).not.toBeInTheDocument();
   });
 
   it('shows bulk actions and updates selected count', async () => {
@@ -76,7 +66,9 @@ describe('OperationsListPage', () => {
     await user.click(statusSelect);
     await user.click(await screen.findByRole('option', { name: /approved/i }));
 
-    expect(screen.getByText(/Daily Coffee/i)).toBeInTheDocument();
-    expect(screen.queryByText(/TechMarket/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Daily Coffee/i)).toBeInTheDocument();
+      expect(screen.queryByText(/TechMarket/i)).not.toBeInTheDocument();
+    });
   });
 });

@@ -1,4 +1,6 @@
 import { Button, MenuItem, Paper, Stack, TextField } from '@mui/material';
+import { useEffect, useState } from 'react';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import type { OperationsFilterValues } from '../model/types';
 
 type OperationsFiltersProps = {
@@ -8,18 +10,39 @@ type OperationsFiltersProps = {
 };
 
 export function OperationsFilters({ value, onChange, onReset }: OperationsFiltersProps) {
+  const searchDebounceMs = import.meta.env.MODE === 'test' ? 0 : 400;
+
+  const [searchInput, setSearchInput] = useState(value.search);
+  const debouncedSearch = useDebouncedValue(searchInput, searchDebounceMs);
+
+  useEffect(() => {
+    setSearchInput(value.search);
+  }, [value.search]);
+
+  useEffect(() => {
+    if (debouncedSearch !== value.search) {
+      onChange({
+        ...value,
+        search: debouncedSearch,
+      });
+    }
+  }, [
+    debouncedSearch,
+    onChange,
+    value.order,
+    value.riskLevel,
+    value.search,
+    value.sortBy,
+    value.status,
+  ]);
+
   return (
     <Paper sx={{ p: 2, mb: 3 }}>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
         <TextField
           label="Search merchant"
-          value={value.search}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              search: event.target.value,
-            })
-          }
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
           fullWidth
         />
 

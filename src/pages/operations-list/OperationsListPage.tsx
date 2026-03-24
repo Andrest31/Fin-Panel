@@ -1,4 +1,4 @@
-import { Alert, Box, Chip, CircularProgress, Snackbar, Stack, Typography } from '@mui/material';
+import { Alert, Box, Chip, Snackbar, Stack, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -14,6 +14,7 @@ import { defaultOperationsFilters, type OperationsFilterValues } from '@/feature
 import { OperationsFilters } from '@/features/operation-filters/ui/OperationsFilters';
 import { BulkActionsBar } from '@/widgets/operations-table/BulkActionsBar';
 import { OperationsTable } from '@/widgets/operations-table/OperationsTable';
+import { OperationsTableSkeleton } from '@/widgets/operations-table/OperationsTableSkeleton';
 
 function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues): Operation[] {
   const normalizedSearch = filters.search.trim().toLowerCase();
@@ -55,6 +56,7 @@ export function OperationsListPage() {
   const [pendingBulkStatus, setPendingBulkStatus] = useState<OperationStatus | null>(null);
 
   const queryClient = useQueryClient();
+  const pollingInterval = import.meta.env.MODE === 'test' ? false : 10000;
 
   const filters = useMemo(
     () => getOperationsFiltersFromSearchParams(searchParams),
@@ -64,7 +66,7 @@ export function OperationsListPage() {
   const { data, isLoading, isError, error, isFetching } = useQuery({
     queryKey: ['operations'],
     queryFn: getOperations,
-    refetchInterval: 10000,
+    refetchInterval: pollingInterval,
   });
 
   const filteredOperations = useMemo(() => {
@@ -171,7 +173,7 @@ export function OperationsListPage() {
         {isFetching && !isLoading ? <Chip label="Refreshing..." color="warning" /> : null}
       </Stack>
 
-      {isLoading && <CircularProgress />}
+      {isLoading && <OperationsTableSkeleton />}
 
       {isError && (
         <Alert severity="error">
