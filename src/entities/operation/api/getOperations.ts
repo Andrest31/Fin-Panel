@@ -1,4 +1,15 @@
 import { z } from 'zod';
+import { getMockScenario } from '@/shared/lib/mockScenario';
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
 
 export const operationStatusSchema = z.enum([
   'new',
@@ -9,6 +20,24 @@ export const operationStatusSchema = z.enum([
 ]);
 
 export const operationRiskLevelSchema = z.enum(['low', 'medium', 'high']);
+export const riskFactorCodeSchema = z.enum([
+  'velocity_spike',
+  'new_device',
+  'geo_mismatch',
+  'high_risk_merchant',
+  'ip_reputation',
+  'amount_anomaly',
+  'merchant_pattern',
+  'travel_pattern',
+  'mcc_anomaly',
+]);
+
+export const operationRiskFactorSchema = z.object({
+  code: riskFactorCodeSchema,
+  label: z.string(),
+  contribution: z.number(),
+  value: z.string(),
+});
 
 export const operationListItemSchema = z.object({
   id: z.string(),
@@ -17,16 +46,23 @@ export const operationListItemSchema = z.object({
   currency: z.string(),
   status: operationStatusSchema,
   riskLevel: operationRiskLevelSchema,
+  riskScore: z.number().min(0).max(100),
   createdAt: z.string(),
   updatedAt: z.string(),
   customerId: z.string(),
-  paymentMethod: z.string(),
+  paymentMethod: z.enum(['card', 'sbp']),
   country: z.string(),
   city: z.string(),
   deviceId: z.string(),
   ipAddress: z.string(),
   reviewer: z.string().nullable(),
   flagReasons: z.array(z.string()),
+});
+
+export const operationHistoryChangeSchema = z.object({
+  field: z.string(),
+  before: z.string().nullable(),
+  after: z.string().nullable(),
 });
 
 export const operationHistoryEventSchema = z.object({
@@ -36,10 +72,26 @@ export const operationHistoryEventSchema = z.object({
   actor: z.string(),
   comment: z.string(),
   reason: z.string().optional(),
+  changes: z.array(operationHistoryChangeSchema).optional().default([]),
+});
+
+export const relatedOperationSchema = z.object({
+  id: z.string(),
+  merchant: z.string(),
+  amount: z.number(),
+  currency: z.string(),
+  status: operationStatusSchema,
+  riskLevel: operationRiskLevelSchema,
+  createdAt: z.string(),
+  relation: z.string(),
 });
 
 export const operationDetailsSchema = operationListItemSchema.extend({
+  riskFactors: z.array(operationRiskFactorSchema),
   history: z.array(operationHistoryEventSchema),
+  relatedOperations: z.array(relatedOperationSchema),
+  recommendedAction: z.string(),
+  analystSummary: z.string(),
 });
 
 export const operationsSortBySchema = z.enum(['createdAt', 'amount', 'merchant']);
@@ -91,8 +143,11 @@ export const bulkUpdateOperationStatusResponseSchema = z.object({
 export type Operation = z.infer<typeof operationListItemSchema>;
 export type OperationDetails = z.infer<typeof operationDetailsSchema>;
 export type OperationHistoryEvent = z.infer<typeof operationHistoryEventSchema>;
+export type OperationHistoryChange = z.infer<typeof operationHistoryChangeSchema>;
 export type OperationStatus = z.infer<typeof operationStatusSchema>;
 export type OperationRiskLevel = z.infer<typeof operationRiskLevelSchema>;
+export type OperationRiskFactor = z.infer<typeof operationRiskFactorSchema>;
+export type RelatedOperation = z.infer<typeof relatedOperationSchema>;
 export type OperationsSortBy = z.infer<typeof operationsSortBySchema>;
 export type SortOrder = z.infer<typeof sortOrderSchema>;
 export type GetOperationsParams = z.infer<typeof getOperationsParamsSchema>;
@@ -107,7 +162,16 @@ export type OperationDecisionPayload = {
   comment: string;
 };
 
-async function parseJsonResponse<T>(response: Response, schema: z.ZodSchema<T>): Promise<T> {
+function createRequestHeaders() {
+  return {
+    'x-mock-scenario': getMockScenario(),
+  };
+}
+
+async function parseJsonResponse<T>(
+  response: Response,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+): Promise<T> {
   const text = await response.text();
 
   let json: unknown;
@@ -127,7 +191,7 @@ async function parseJsonResponse<T>(response: Response, schema: z.ZodSchema<T>):
         ? json.message
         : `Request failed: ${response.status}`;
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   return schema.parse(json);
@@ -145,8 +209,12 @@ function createOperationsSearchParams(params: GetOperationsParams): URLSearchPar
   if (parsedParams.search) searchParams.set('search', parsedParams.search);
   if (parsedParams.status) searchParams.set('status', parsedParams.status);
   if (parsedParams.riskLevel) searchParams.set('riskLevel', parsedParams.riskLevel);
-  if (parsedParams.minAmount !== undefined) searchParams.set('minAmount', String(parsedParams.minAmount));
-  if (parsedParams.maxAmount !== undefined) searchParams.set('maxAmount', String(parsedParams.maxAmount));
+  if (parsedParams.minAmount !== undefined) {
+    searchParams.set('minAmount', String(parsedParams.minAmount));
+  }
+  if (parsedParams.maxAmount !== undefined) {
+    searchParams.set('maxAmount', String(parsedParams.maxAmount));
+  }
   if (parsedParams.dateFrom) searchParams.set('dateFrom', parsedParams.dateFrom);
   if (parsedParams.dateTo) searchParams.set('dateTo', parsedParams.dateTo);
   if (parsedParams.paymentMethod) searchParams.set('paymentMethod', parsedParams.paymentMethod);
@@ -157,13 +225,18 @@ function createOperationsSearchParams(params: GetOperationsParams): URLSearchPar
 
 export async function getOperations(params: GetOperationsParams): Promise<GetOperationsResponse> {
   const searchParams = createOperationsSearchParams(params);
-  const response = await fetch(`/api/operations?${searchParams.toString()}`);
+  const response = await fetch(`/api/operations?${searchParams.toString()}`, {
+    headers: createRequestHeaders(),
+  });
 
   return parseJsonResponse(response, operationsResponseSchema);
 }
 
 export async function getOperationById(id: string): Promise<OperationDetails> {
-  const response = await fetch(`/api/operations/${id}`);
+  const response = await fetch(`/api/operations/${id}`, {
+    headers: createRequestHeaders(),
+  });
+
   return parseJsonResponse(response, operationDetailsSchema);
 }
 
@@ -177,6 +250,7 @@ export async function updateOperationStatus(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
+      ...createRequestHeaders(),
     },
     body: JSON.stringify(requestBody),
   });
@@ -197,6 +271,7 @@ export async function bulkUpdateOperationStatus(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
+      ...createRequestHeaders(),
     },
     body: JSON.stringify(requestBody),
   });

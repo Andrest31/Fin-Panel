@@ -7,6 +7,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
@@ -16,13 +17,15 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
+  ApiError,
   getOperationById,
   updateOperationStatus,
   type GetOperationsResponse,
   type OperationDetails,
+  type OperationRiskFactor,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
 import {
@@ -44,6 +47,28 @@ function getStatusColor(status: 'new' | 'in_review' | 'approved' | 'blocked' | '
   return 'default';
 }
 
+function getRecommendedActionColor(action: string) {
+  if (action.toLowerCase().includes('block')) return 'error.main';
+  if (action.toLowerCase().includes('manual')) return 'warning.main';
+  return 'success.main';
+}
+
+function formatRiskFactorContribution(factor: OperationRiskFactor) {
+  return `+${factor.contribution}`;
+}
+
+function getMutationErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 409) {
+    return 'Операция уже была обновлена другим аналитиком. Данные перечитаны.';
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Не удалось обновить статус';
+}
+
 type DecisionPayload = {
   status: OperationStatus;
   reason: string;
@@ -63,11 +88,16 @@ export function OperationDetailsPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingStatus, setPendingStatus] = useState<OperationStatus | null>(null);
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['operation', id],
     queryFn: () => getOperationById(id),
     enabled: Boolean(id),
   });
+
+  const highImpactFactors = useMemo(
+    () => (data?.riskFactors ?? []).filter((factor) => factor.contribution >= 20),
+    [data?.riskFactors],
+  );
 
   const statusMutation = useMutation({
     mutationFn: (payload: DecisionPayload) => updateOperationStatus(id, payload),
@@ -111,7 +141,7 @@ export function OperationDetailsPage() {
       setPendingStatus(null);
     },
 
-    onError: (mutationError, _payload, context) => {
+    onError: async (mutationError, _payload, context) => {
       if (context?.previousOperation) {
         queryClient.setQueryData(['operation', id], context.previousOperation);
       }
@@ -120,10 +150,14 @@ export function OperationDetailsPage() {
         queryClient.setQueryData(queryKey, response);
       });
 
-      setErrorMessage(
-        mutationError instanceof Error ? mutationError.message : 'Не удалось обновить статус',
-      );
+      setErrorMessage(getMutationErrorMessage(mutationError));
       setSuccessMessage('');
+      setPendingStatus(null);
+
+      if (mutationError instanceof ApiError && mutationError.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: ['operations'] });
+        await queryClient.invalidateQueries({ queryKey: ['operation', id] });
+      }
     },
 
     onSettled: async () => {
@@ -163,24 +197,34 @@ export function OperationDetailsPage() {
           ← Back to queue
         </Button>
 
-        <Typography variant="h4">Operation Details</Typography>
+        <Typography variant="h4">Case Review</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Экран расследования операции: explainable risk scoring, decision workflow и audit trail.
+        </Typography>
       </Stack>
 
       {isLoading && <CircularProgress />}
 
       {isError && (
-        <Alert severity="error">
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        >
           {error instanceof Error ? error.message : 'Unknown error'}
         </Alert>
       )}
 
       {data && (
         <Grid container spacing={3}>
-          <Grid size={{ xs: 12, lg: 8 }}>
+          <Grid size={{ xs: 12, xl: 8 }}>
             <Card>
               <CardContent>
                 <Stack
-                  direction={{ xs: 'column', md: 'row' }}
+                  direction={{ xs: 'column', lg: 'row' }}
                   spacing={2}
                   justifyContent="space-between"
                   sx={{ mb: 2 }}
@@ -192,9 +236,10 @@ export function OperationDetailsPage() {
                     </Typography>
                   </Box>
 
-                  <Stack direction="row" spacing={1}>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                     <Chip label={data.status} color={getStatusColor(data.status)} />
                     <Chip label={`risk: ${data.riskLevel}`} color={getRiskColor(data.riskLevel)} />
+                    <Chip label={`score: ${data.riskScore}/100`} />
                   </Stack>
                 </Stack>
 
@@ -263,12 +308,22 @@ export function OperationDetailsPage() {
                     </Typography>
                   </Grid>
 
-                  <Grid size={{ xs: 12, md: 6 }}>
+                  <Grid size={{ xs: 12 }}>
                     <Typography variant="body2" color="text.secondary">
-                      Updated at
+                      Analyst summary
                     </Typography>
-                    <Typography variant="body1">
-                      {new Date(data.updatedAt).toLocaleString()}
+                    <Typography variant="body1">{data.analystSummary}</Typography>
+                  </Grid>
+
+                  <Grid size={{ xs: 12 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Recommended action
+                    </Typography>
+                    <Typography
+                      variant="body1"
+                      sx={{ color: getRecommendedActionColor(data.recommendedAction), fontWeight: 600 }}
+                    >
+                      {data.recommendedAction}
                     </Typography>
                   </Grid>
                 </Grid>
@@ -278,7 +333,62 @@ export function OperationDetailsPage() {
             <Card sx={{ mt: 3 }}>
               <CardContent>
                 <Typography variant="h6" sx={{ mb: 2 }}>
-                  History
+                  Explainable risk scoring
+                </Typography>
+
+                <Stack spacing={2}>
+                  {data.riskFactors.map((factor) => (
+                    <Box key={factor.code}>
+                      <Stack
+                        direction={{ xs: 'column', md: 'row' }}
+                        justifyContent="space-between"
+                        spacing={1}
+                        sx={{ mb: 1 }}
+                      >
+                        <Box>
+                          <Typography variant="subtitle2">{factor.label}</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {factor.value}
+                          </Typography>
+                        </Box>
+
+                        <Chip label={formatRiskFactorContribution(factor)} />
+                      </Stack>
+
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.min(100, factor.contribution * 2.5)}
+                        color={factor.contribution >= 20 ? 'error' : 'warning'}
+                        sx={{ height: 8, borderRadius: 999 }}
+                      />
+                    </Box>
+                  ))}
+                </Stack>
+
+                <Divider sx={{ my: 3 }} />
+
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  High-impact signals
+                </Typography>
+
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  {highImpactFactors.map((factor) => (
+                    <Chip key={factor.code} color="error" label={factor.label} />
+                  ))}
+
+                  {highImpactFactors.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No high-impact risk factors.
+                    </Typography>
+                  ) : null}
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  Audit trail
                 </Typography>
 
                 <List>
@@ -287,10 +397,40 @@ export function OperationDetailsPage() {
                       key={event.id}
                       divider={index < data.history.length - 1}
                       disableGutters
+                      alignItems="flex-start"
                     >
                       <ListItemText
-                        primary={`${event.type} • ${event.actor}${event.reason ? ` • ${event.reason}` : ''}`}
-                        secondary={`${new Date(event.timestamp).toLocaleString()} • ${event.comment}`}
+                        primary={
+                          <Stack
+                            direction={{ xs: 'column', md: 'row' }}
+                            spacing={1}
+                            alignItems={{ xs: 'flex-start', md: 'center' }}
+                          >
+                            <Typography variant="subtitle2">{event.type}</Typography>
+                            <Chip size="small" label={event.actor} />
+                            {event.reason ? <Chip size="small" variant="outlined" label={event.reason} /> : null}
+                          </Stack>
+                        }
+                        secondary={
+                          <Stack spacing={1} sx={{ mt: 1 }}>
+                            <Typography variant="body2">
+                              {new Date(event.timestamp).toLocaleString()} — {event.comment}
+                            </Typography>
+
+                            {event.changes.length > 0 ? (
+                              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                                {event.changes.map((change) => (
+                                  <Chip
+                                    key={`${event.id}_${change.field}`}
+                                    size="small"
+                                    variant="outlined"
+                                    label={`${change.field}: ${change.before ?? '—'} → ${change.after ?? '—'}`}
+                                  />
+                                ))}
+                              </Stack>
+                            ) : null}
+                          </Stack>
+                        }
                       />
                     </ListItem>
                   ))}
@@ -299,11 +439,11 @@ export function OperationDetailsPage() {
             </Card>
           </Grid>
 
-          <Grid size={{ xs: 12, lg: 4 }}>
+          <Grid size={{ xs: 12, xl: 4 }}>
             <Card>
               <CardContent>
                 <Typography variant="h6" sx={{ mb: 2 }}>
-                  Risk Summary
+                  Decision workflow
                 </Typography>
 
                 <Stack spacing={1} sx={{ mb: 3 }}>
@@ -311,6 +451,7 @@ export function OperationDetailsPage() {
                     label={`Risk level: ${data.riskLevel}`}
                     color={getRiskColor(data.riskLevel)}
                   />
+                  <Chip label={`Risk score: ${data.riskScore}/100`} />
                   <Chip label={`Flags: ${data.flagReasons.length}`} />
                 </Stack>
 
@@ -329,7 +470,7 @@ export function OperationDetailsPage() {
                 </Stack>
 
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  Actions
+                  Analyst actions
                 </Typography>
 
                 <Stack spacing={1}>
@@ -365,6 +506,52 @@ export function OperationDetailsPage() {
                     Updating operation status...
                   </Typography>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  Related operations
+                </Typography>
+
+                <List>
+                  {data.relatedOperations.map((operation, index) => (
+                    <ListItem
+                      key={operation.id}
+                      component={RouterLink}
+                      to={`/operations/${operation.id}`}
+                      sx={{
+                        px: 0,
+                        color: 'inherit',
+                        textDecoration: 'none',
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      <ListItemText
+                        primary={
+                          <Stack
+                            direction={{ xs: 'column', md: 'row' }}
+                            spacing={1}
+                            alignItems={{ xs: 'flex-start', md: 'center' }}
+                          >
+                            <Typography variant="subtitle2">{operation.merchant}</Typography>
+                            <Chip size="small" label={operation.relation} variant="outlined" />
+                            <Chip size="small" label={operation.status} />
+                          </Stack>
+                        }
+                        secondary={`${operation.amount} ${operation.currency} • ${new Date(operation.createdAt).toLocaleString()}`}
+                      />
+                      {index < data.relatedOperations.length - 1 ? null : null}
+                    </ListItem>
+                  ))}
+
+                  {data.relatedOperations.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No related operations found.
+                    </Typography>
+                  ) : null}
+                </List>
               </CardContent>
             </Card>
           </Grid>

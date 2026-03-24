@@ -13,6 +13,7 @@ import type { ChangeEvent } from 'react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  ApiError,
   bulkUpdateOperationStatus,
   getOperations,
   type GetOperationsParams,
@@ -25,8 +26,14 @@ import {
   applyOptimisticDecisionToOperationsResponse,
 } from '@/entities/operation/lib/optimisticUpdates';
 import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
-import { getOperationsFiltersFromSearchParams, toOperationsSearchParams } from '@/features/operation-filters/lib/searchParams';
-import { defaultOperationsFilters, type OperationsFilterValues } from '@/features/operation-filters/model/types';
+import {
+  getOperationsFiltersFromSearchParams,
+  toOperationsSearchParams,
+} from '@/features/operation-filters/lib/searchParams';
+import {
+  defaultOperationsFilters,
+  type OperationsFilterValues,
+} from '@/features/operation-filters/model/types';
 import { OperationsFilters } from '@/features/operation-filters/ui/OperationsFilters';
 import { BulkActionsBar } from '@/widgets/operations-table/BulkActionsBar';
 import { OperationsTable } from '@/widgets/operations-table/OperationsTable';
@@ -67,6 +74,18 @@ function mapFiltersToQueryParams(filters: OperationsFilterValues): GetOperations
 function formatRefreshedAt(value?: string) {
   if (!value) return '—';
   return new Date(value).toLocaleString();
+}
+
+function getBulkErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.status === 409) {
+    return 'Часть операций уже была обработана другим аналитиком. Список обновлён.';
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Не удалось обновить операции';
 }
 
 export function OperationsListPage() {
@@ -161,7 +180,7 @@ export function OperationsListPage() {
       setErrorMessage('');
     },
 
-    onError: (mutationError, _variables, context) => {
+    onError: async (mutationError, _variables, context) => {
       context?.previousOperationsLists.forEach(([queryKey, response]) => {
         queryClient.setQueryData(queryKey, response);
       });
@@ -172,10 +191,14 @@ export function OperationsListPage() {
         }
       });
 
-      setErrorMessage(
-        mutationError instanceof Error ? mutationError.message : 'Не удалось обновить операции',
-      );
+      setErrorMessage(getBulkErrorMessage(mutationError));
       setSuccessMessage('');
+      setPendingBulkStatus(null);
+
+      if (mutationError instanceof ApiError && mutationError.status === 409) {
+        setSelectedIds([]);
+        await queryClient.invalidateQueries({ queryKey: ['operations'] });
+      }
     },
 
     onSettled: async (_data, _error, variables) => {
@@ -248,7 +271,7 @@ export function OperationsListPage() {
       </Typography>
 
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Очередь операций для анализа: серверная фильтрация, сортировка, пагинация и регулярное обновление данных.
+        Очередь подозрительных операций для антифрод-аналитика.
       </Typography>
 
       <OperationsFilters value={filters} onChange={handleFiltersChange} onReset={handleReset} />

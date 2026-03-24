@@ -27,7 +27,10 @@ function getEventType(status: OperationStatus): string {
   }
 }
 
-function createOptimisticHistoryEvent(payload: DecisionPayload): OperationHistoryEvent {
+function createOptimisticHistoryEvent(
+  operation: Operation | OperationDetails,
+  payload: DecisionPayload,
+): OperationHistoryEvent {
   return {
     id: `optimistic_${Date.now()}`,
     type: getEventType(payload.status),
@@ -35,6 +38,18 @@ function createOptimisticHistoryEvent(payload: DecisionPayload): OperationHistor
     actor: OPTIMISTIC_ACTOR,
     comment: payload.comment,
     reason: payload.reason,
+    changes: [
+      {
+        field: 'status',
+        before: operation.status,
+        after: payload.status,
+      },
+      {
+        field: 'reviewer',
+        before: operation.reviewer,
+        after: OPTIMISTIC_ACTOR,
+      },
+    ],
   };
 }
 
@@ -54,13 +69,20 @@ export function applyOptimisticDecisionToOperationDetails(
   operation: OperationDetails,
   payload: DecisionPayload,
 ): OperationDetails {
-  const optimisticEvent = createOptimisticHistoryEvent(payload);
+  const optimisticEvent = createOptimisticHistoryEvent(operation, payload);
 
   return {
     ...operation,
     status: payload.status,
     updatedAt: optimisticEvent.timestamp,
     reviewer: OPTIMISTIC_ACTOR,
+    analystSummary: payload.comment,
+    recommendedAction:
+      payload.status === 'blocked'
+        ? 'Operation was blocked after analyst decision.'
+        : payload.status === 'approved'
+          ? 'Operation was approved after analyst review.'
+          : 'Operation requires additional manual investigation.',
     history: [optimisticEvent, ...operation.history],
   };
 }

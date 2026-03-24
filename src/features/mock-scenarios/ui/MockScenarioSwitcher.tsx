@@ -12,6 +12,7 @@ const options: Array<{ value: MockScenario; label: string }> = [
   { value: 'flaky', label: 'Flaky random errors' },
   { value: 'rate_limit', label: '429 rate limit' },
   { value: 'server_error', label: '500 server error' },
+  { value: 'conflict', label: '409 conflict' },
 ];
 
 export function MockScenarioSwitcher() {
@@ -32,9 +33,9 @@ export function MockScenarioSwitcher() {
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 180 }}>
+    <Paper variant="outlined" sx={{ p: 2 }}>
+      <Stack spacing={1.5}>
+        <Typography variant="body2" color="text.secondary">
           Mock API scenario
         </Typography>
 
@@ -44,7 +45,7 @@ export function MockScenarioSwitcher() {
           label="Scenario"
           value={scenario}
           onChange={(event) => handleChange(event.target.value as MockScenario)}
-          sx={{ minWidth: 260 }}
+          fullWidth
         >
           {options.map((option) => (
             <MenuItem key={option.value} value={option.value}>

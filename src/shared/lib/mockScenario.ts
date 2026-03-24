@@ -3,7 +3,8 @@ export type MockScenario =
   | 'slow'
   | 'flaky'
   | 'rate_limit'
-  | 'server_error';
+  | 'server_error'
+  | 'conflict';
 
 const STORAGE_KEY = 'fin-panel:mock-scenario';
 
@@ -19,7 +20,8 @@ export function getMockScenario(): MockScenario {
     value === 'slow' ||
     value === 'flaky' ||
     value === 'rate_limit' ||
-    value === 'server_error'
+    value === 'server_error' ||
+    value === 'conflict'
   ) {
     return value;
   }
@@ -36,5 +38,5 @@ export function setMockScenario(value: MockScenario) {
 }
 
 export function isRetryableStatus(status: number) {
-  return status === 429 || status >= 500;
+  return status === 409 || status === 429 || status >= 500;
 }

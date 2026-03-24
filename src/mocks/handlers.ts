@@ -1,10 +1,29 @@
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
+
+type MockScenario =
+  | 'normal'
+  | 'slow'
+  | 'flaky'
+  | 'rate_limit'
+  | 'server_error'
+  | 'conflict';
 
 type OperationStatus = 'new' | 'in_review' | 'approved' | 'blocked' | 'flagged';
 type OperationRiskLevel = 'low' | 'medium' | 'high';
 type OperationsSortBy = 'createdAt' | 'amount' | 'merchant';
 type SortOrder = 'asc' | 'desc';
 type PaymentMethod = 'card' | 'sbp';
+
+type RiskFactorCode =
+  | 'velocity_spike'
+  | 'new_device'
+  | 'geo_mismatch'
+  | 'high_risk_merchant'
+  | 'ip_reputation'
+  | 'amount_anomaly'
+  | 'merchant_pattern'
+  | 'travel_pattern'
+  | 'mcc_anomaly';
 
 type OperationHistoryEvent = {
   id: string;
@@ -13,6 +32,18 @@ type OperationHistoryEvent = {
   actor: string;
   comment: string;
   reason?: string;
+  changes?: Array<{
+    field: string;
+    before: string | null;
+    after: string | null;
+  }>;
+};
+
+type OperationRiskFactor = {
+  code: RiskFactorCode;
+  label: string;
+  contribution: number;
+  value: string;
 };
 
 type OperationRecord = {
@@ -22,6 +53,8 @@ type OperationRecord = {
   currency: string;
   status: OperationStatus;
   riskLevel: OperationRiskLevel;
+  riskScore: number;
+  riskFactors: OperationRiskFactor[];
   createdAt: string;
   updatedAt: string;
   customerId: string;
@@ -33,6 +66,8 @@ type OperationRecord = {
   reviewer: string | null;
   flagReasons: string[];
   history: OperationHistoryEvent[];
+  recommendedAction: string;
+  analystSummary: string;
 };
 
 type StatusUpdateRequest = {
@@ -49,6 +84,13 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'new',
     riskLevel: 'high',
+    riskScore: 87,
+    riskFactors: [
+      { code: 'new_device', label: 'New device', contribution: 24, value: 'Device was not seen before' },
+      { code: 'velocity_spike', label: 'Velocity spike', contribution: 28, value: '5 attempts within 12 minutes' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 19, value: '3.8x above customer median' },
+      { code: 'ip_reputation', label: 'IP reputation', contribution: 16, value: 'Medium-risk IP segment' },
+    ],
     createdAt: '2026-03-24T10:15:00.000Z',
     updatedAt: '2026-03-24T10:20:00.000Z',
     customerId: 'cus_1001',
@@ -59,6 +101,8 @@ const operations: OperationRecord[] = [
     ipAddress: '91.240.12.11',
     reviewer: null,
     flagReasons: ['large_amount', 'new_device', 'velocity_spike'],
+    recommendedAction: 'Block operation or request additional verification.',
+    analystSummary: 'High-risk operation with unusual amount and rapid repeat attempts from a new device.',
     history: [
       {
         id: 'evt_001',
@@ -72,7 +116,11 @@ const operations: OperationRecord[] = [
         type: 'risk_scored',
         timestamp: '2026-03-24T10:16:30.000Z',
         actor: 'system',
-        comment: 'Risk level set to high',
+        comment: 'Risk score calculated',
+        changes: [
+          { field: 'riskScore', before: null, after: '87' },
+          { field: 'riskLevel', before: null, after: 'high' },
+        ],
       },
     ],
   },
@@ -83,6 +131,11 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'approved',
     riskLevel: 'low',
+    riskScore: 9,
+    riskFactors: [
+      { code: 'merchant_pattern', label: 'Known merchant pattern', contribution: 3, value: 'Daily recurring merchant' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 2, value: 'Within normal customer range' },
+    ],
     createdAt: '2026-03-24T10:18:00.000Z',
     updatedAt: '2026-03-24T10:19:00.000Z',
     customerId: 'cus_1002',
@@ -93,6 +146,8 @@ const operations: OperationRecord[] = [
     ipAddress: '95.82.44.23',
     reviewer: 'analyst_01',
     flagReasons: [],
+    recommendedAction: 'Approve operation.',
+    analystSummary: 'Typical low-risk daily purchase pattern.',
     history: [
       {
         id: 'evt_003',
@@ -108,6 +163,10 @@ const operations: OperationRecord[] = [
         actor: 'analyst_01',
         comment: 'No suspicious signals found',
         reason: 'trusted_pattern',
+        changes: [
+          { field: 'status', before: 'new', after: 'approved' },
+          { field: 'reviewer', before: null, after: 'analyst_01' },
+        ],
       },
     ],
   },
@@ -118,6 +177,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'in_review',
     riskLevel: 'medium',
+    riskScore: 58,
+    riskFactors: [
+      { code: 'merchant_pattern', label: 'Merchant pattern', contribution: 18, value: 'High-return merchant category' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 14, value: '1.9x above baseline' },
+      { code: 'new_device', label: 'New device', contribution: 12, value: 'First time for device' },
+    ],
     createdAt: '2026-03-24T10:21:00.000Z',
     updatedAt: '2026-03-24T10:25:00.000Z',
     customerId: 'cus_1003',
@@ -128,6 +193,8 @@ const operations: OperationRecord[] = [
     ipAddress: '178.45.201.8',
     reviewer: 'analyst_02',
     flagReasons: ['merchant_pattern'],
+    recommendedAction: 'Send to manual review and inspect customer history.',
+    analystSummary: 'Moderate-risk electronics purchase with partial fraud indicators.',
     history: [
       {
         id: 'evt_005',
@@ -143,6 +210,9 @@ const operations: OperationRecord[] = [
         actor: 'system',
         comment: 'Sent to analyst review',
         reason: 'merchant_pattern',
+        changes: [
+          { field: 'status', before: 'new', after: 'in_review' },
+        ],
       },
     ],
   },
@@ -153,6 +223,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'flagged',
     riskLevel: 'high',
+    riskScore: 92,
+    riskFactors: [
+      { code: 'mcc_anomaly', label: 'MCC anomaly', contribution: 25, value: 'Atypical merchant category' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 30, value: '6.2x above customer baseline' },
+      { code: 'geo_mismatch', label: 'Geo mismatch', contribution: 22, value: 'Billing and spending cities differ' },
+    ],
     createdAt: '2026-03-24T10:26:00.000Z',
     updatedAt: '2026-03-24T10:29:00.000Z',
     customerId: 'cus_1004',
@@ -163,6 +239,8 @@ const operations: OperationRecord[] = [
     ipAddress: '84.52.141.10',
     reviewer: null,
     flagReasons: ['mcc_anomaly', 'large_amount'],
+    recommendedAction: 'Block operation pending customer confirmation.',
+    analystSummary: 'Severe anomaly for both amount and merchant category.',
     history: [
       {
         id: 'evt_007',
@@ -178,6 +256,9 @@ const operations: OperationRecord[] = [
         actor: 'system',
         comment: 'Operation flagged by rule engine',
         reason: 'mcc_anomaly',
+        changes: [
+          { field: 'status', before: 'new', after: 'flagged' },
+        ],
       },
     ],
   },
@@ -188,6 +269,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'new',
     riskLevel: 'medium',
+    riskScore: 61,
+    riskFactors: [
+      { code: 'travel_pattern', label: 'Travel pattern', contribution: 16, value: 'Cross-region travel booking' },
+      { code: 'geo_mismatch', label: 'Geo mismatch', contribution: 20, value: 'Unusual city pair' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 15, value: '2.1x above median' },
+    ],
     createdAt: '2026-03-24T10:30:00.000Z',
     updatedAt: '2026-03-24T10:31:00.000Z',
     customerId: 'cus_1005',
@@ -198,6 +285,8 @@ const operations: OperationRecord[] = [
     ipAddress: '176.15.11.90',
     reviewer: null,
     flagReasons: ['travel_pattern'],
+    recommendedAction: 'Manual review recommended before approval.',
+    analystSummary: 'Travel-related spend with mild location anomaly.',
     history: [
       {
         id: 'evt_009',
@@ -215,6 +304,11 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'approved',
     riskLevel: 'low',
+    riskScore: 11,
+    riskFactors: [
+      { code: 'merchant_pattern', label: 'Known merchant pattern', contribution: 5, value: 'Recurring category' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 2, value: 'Within expected range' },
+    ],
     createdAt: '2026-03-24T10:33:00.000Z',
     updatedAt: '2026-03-24T10:34:00.000Z',
     customerId: 'cus_1006',
@@ -225,6 +319,8 @@ const operations: OperationRecord[] = [
     ipAddress: '213.87.51.14',
     reviewer: 'analyst_03',
     flagReasons: [],
+    recommendedAction: 'Approve operation.',
+    analystSummary: 'Routine transportation-related purchase.',
     history: [
       {
         id: 'evt_010',
@@ -240,6 +336,9 @@ const operations: OperationRecord[] = [
         actor: 'analyst_03',
         comment: 'Known low-risk pattern',
         reason: 'known_customer',
+        changes: [
+          { field: 'status', before: 'new', after: 'approved' },
+        ],
       },
     ],
   },
@@ -250,6 +349,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'blocked',
     riskLevel: 'high',
+    riskScore: 95,
+    riskFactors: [
+      { code: 'high_risk_merchant', label: 'High-risk merchant', contribution: 34, value: 'Restricted category' },
+      { code: 'velocity_spike', label: 'Velocity spike', contribution: 26, value: 'Multiple retries detected' },
+      { code: 'ip_reputation', label: 'IP reputation', contribution: 19, value: 'Poor reputation score' },
+    ],
     createdAt: '2026-03-24T10:36:00.000Z',
     updatedAt: '2026-03-24T10:37:00.000Z',
     customerId: 'cus_1007',
@@ -260,6 +365,8 @@ const operations: OperationRecord[] = [
     ipAddress: '109.126.80.77',
     reviewer: 'analyst_04',
     flagReasons: ['high_risk_merchant', 'velocity_spike'],
+    recommendedAction: 'Keep blocked and escalate if retried again.',
+    analystSummary: 'Fraud-prone merchant with strong negative signals.',
     history: [
       {
         id: 'evt_012',
@@ -275,6 +382,9 @@ const operations: OperationRecord[] = [
         actor: 'analyst_04',
         comment: 'Blocked due to fraud indicators',
         reason: 'stolen_card_signal',
+        changes: [
+          { field: 'status', before: 'new', after: 'blocked' },
+        ],
       },
     ],
   },
@@ -285,6 +395,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'in_review',
     riskLevel: 'medium',
+    riskScore: 54,
+    riskFactors: [
+      { code: 'new_device', label: 'New device', contribution: 20, value: 'New browser fingerprint' },
+      { code: 'merchant_pattern', label: 'Merchant pattern', contribution: 11, value: 'Elevated refund rate' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 10, value: 'Slightly above baseline' },
+    ],
     createdAt: '2026-03-24T10:39:00.000Z',
     updatedAt: '2026-03-24T10:41:00.000Z',
     customerId: 'cus_1008',
@@ -295,6 +411,8 @@ const operations: OperationRecord[] = [
     ipAddress: '46.0.201.44',
     reviewer: 'analyst_02',
     flagReasons: ['new_device'],
+    recommendedAction: 'Continue manual review.',
+    analystSummary: 'Needs device-level validation before final decision.',
     history: [
       {
         id: 'evt_014',
@@ -310,6 +428,9 @@ const operations: OperationRecord[] = [
         actor: 'system',
         comment: 'Review requested',
         reason: 'new_device',
+        changes: [
+          { field: 'status', before: 'new', after: 'in_review' },
+        ],
       },
     ],
   },
@@ -320,6 +441,10 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'approved',
     riskLevel: 'low',
+    riskScore: 7,
+    riskFactors: [
+      { code: 'merchant_pattern', label: 'Known merchant pattern', contribution: 2, value: 'High-frequency safe merchant' },
+    ],
     createdAt: '2026-03-24T10:42:00.000Z',
     updatedAt: '2026-03-24T10:43:00.000Z',
     customerId: 'cus_1009',
@@ -330,6 +455,8 @@ const operations: OperationRecord[] = [
     ipAddress: '81.19.132.15',
     reviewer: 'analyst_01',
     flagReasons: [],
+    recommendedAction: 'Approve operation.',
+    analystSummary: 'Routine small-ticket spending behaviour.',
     history: [
       {
         id: 'evt_016',
@@ -347,6 +474,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'new',
     riskLevel: 'medium',
+    riskScore: 49,
+    riskFactors: [
+      { code: 'merchant_pattern', label: 'Merchant pattern', contribution: 15, value: 'Digital goods category' },
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 13, value: '1.6x above baseline' },
+      { code: 'new_device', label: 'New device', contribution: 9, value: 'Recently seen device' },
+    ],
     createdAt: '2026-03-24T10:45:00.000Z',
     updatedAt: '2026-03-24T10:46:00.000Z',
     customerId: 'cus_1010',
@@ -357,6 +490,8 @@ const operations: OperationRecord[] = [
     ipAddress: '185.22.64.11',
     reviewer: null,
     flagReasons: ['merchant_pattern'],
+    recommendedAction: 'Review if customer history is sparse.',
+    analystSummary: 'Medium-risk digital goods purchase.',
     history: [
       {
         id: 'evt_017',
@@ -374,6 +509,12 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'flagged',
     riskLevel: 'high',
+    riskScore: 84,
+    riskFactors: [
+      { code: 'amount_anomaly', label: 'Amount anomaly', contribution: 29, value: '4.1x above baseline' },
+      { code: 'ip_reputation', label: 'IP reputation', contribution: 20, value: 'Proxy usage suspected' },
+      { code: 'merchant_pattern', label: 'Merchant pattern', contribution: 14, value: 'Elevated chargeback cohort' },
+    ],
     createdAt: '2026-03-24T10:47:00.000Z',
     updatedAt: '2026-03-24T10:48:00.000Z',
     customerId: 'cus_1011',
@@ -384,6 +525,8 @@ const operations: OperationRecord[] = [
     ipAddress: '92.63.72.201',
     reviewer: null,
     flagReasons: ['large_amount', 'ip_reputation'],
+    recommendedAction: 'Block unless customer can confirm intent.',
+    analystSummary: 'Large electronics purchase from suspicious network segment.',
     history: [
       {
         id: 'evt_018',
@@ -401,6 +544,10 @@ const operations: OperationRecord[] = [
     currency: 'RUB',
     status: 'approved',
     riskLevel: 'low',
+    riskScore: 5,
+    riskFactors: [
+      { code: 'merchant_pattern', label: 'Known merchant pattern', contribution: 1, value: 'Common urban transport merchant' },
+    ],
     createdAt: '2026-03-24T10:49:00.000Z',
     updatedAt: '2026-03-24T10:50:00.000Z',
     customerId: 'cus_1012',
@@ -411,6 +558,8 @@ const operations: OperationRecord[] = [
     ipAddress: '193.33.88.41',
     reviewer: 'analyst_02',
     flagReasons: [],
+    recommendedAction: 'Approve operation.',
+    analystSummary: 'Low-risk transportation spend.',
     history: [
       {
         id: 'evt_019',
@@ -423,6 +572,45 @@ const operations: OperationRecord[] = [
   },
 ];
 
+function getScenario(request: Request): MockScenario {
+  const scenario = request.headers.get('x-mock-scenario');
+
+  if (
+    scenario === 'normal' ||
+    scenario === 'slow' ||
+    scenario === 'flaky' ||
+    scenario === 'rate_limit' ||
+    scenario === 'server_error' ||
+    scenario === 'conflict'
+  ) {
+    return scenario;
+  }
+
+  return 'normal';
+}
+
+async function maybeApplyScenario(request: Request) {
+  const scenario = getScenario(request);
+
+  if (scenario === 'slow') {
+    await delay(1200);
+  }
+
+  if (scenario === 'rate_limit') {
+    return HttpResponse.json({ message: 'Rate limit exceeded' }, { status: 429 });
+  }
+
+  if (scenario === 'server_error') {
+    return HttpResponse.json({ message: 'Internal server error' }, { status: 500 });
+  }
+
+  if (scenario === 'flaky' && Math.random() < 0.35) {
+    return HttpResponse.json({ message: 'Temporary mock API failure' }, { status: 503 });
+  }
+
+  return null;
+}
+
 function toListItem(operation: OperationRecord) {
   return {
     id: operation.id,
@@ -431,6 +619,7 @@ function toListItem(operation: OperationRecord) {
     currency: operation.currency,
     status: operation.status,
     riskLevel: operation.riskLevel,
+    riskScore: operation.riskScore,
     createdAt: operation.createdAt,
     updatedAt: operation.updatedAt,
     customerId: operation.customerId,
@@ -450,6 +639,7 @@ function getActionMeta(status: OperationStatus) {
       eventType: 'approved',
       defaultComment: 'Operation approved by analyst',
       reviewer: 'analyst_99',
+      recommendedAction: 'Operation was approved after analyst review.',
     };
   }
 
@@ -458,6 +648,7 @@ function getActionMeta(status: OperationStatus) {
       eventType: 'blocked',
       defaultComment: 'Operation blocked by analyst',
       reviewer: 'analyst_99',
+      recommendedAction: 'Operation was blocked after analyst decision.',
     };
   }
 
@@ -466,6 +657,7 @@ function getActionMeta(status: OperationStatus) {
       eventType: 'sent_to_review',
       defaultComment: 'Operation sent to manual review',
       reviewer: 'analyst_99',
+      recommendedAction: 'Operation requires additional manual investigation.',
     };
   }
 
@@ -473,6 +665,7 @@ function getActionMeta(status: OperationStatus) {
     eventType: 'status_changed',
     defaultComment: `Status changed to ${status}`,
     reviewer: 'analyst_99',
+    recommendedAction: `Status changed to ${status}.`,
   };
 }
 
@@ -485,9 +678,6 @@ function applyStatusChange(
   const now = new Date().toISOString();
   const actionMeta = getActionMeta(nextStatus);
 
-  operation.status = nextStatus;
-  operation.updatedAt = now;
-  operation.reviewer = actionMeta.reviewer;
   operation.history.unshift({
     id: `evt_${Date.now()}_${operation.id}`,
     type: actionMeta.eventType,
@@ -495,7 +685,25 @@ function applyStatusChange(
     actor: actionMeta.reviewer,
     comment: comment?.trim() || actionMeta.defaultComment,
     reason: reason?.trim() || undefined,
+    changes: [
+      {
+        field: 'status',
+        before: operation.status,
+        after: nextStatus,
+      },
+      {
+        field: 'reviewer',
+        before: operation.reviewer,
+        after: actionMeta.reviewer,
+      },
+    ],
   });
+
+  operation.status = nextStatus;
+  operation.updatedAt = now;
+  operation.reviewer = actionMeta.reviewer;
+  operation.analystSummary = comment?.trim() || operation.analystSummary;
+  operation.recommendedAction = actionMeta.recommendedAction;
 }
 
 function sortOperations(
@@ -574,8 +782,37 @@ function filterOperations(url: URL): OperationRecord[] {
   });
 }
 
+function buildRelatedOperations(operation: OperationRecord) {
+  return operations
+    .filter((item) => item.id !== operation.id)
+    .filter(
+      (item) =>
+        item.customerId === operation.customerId || item.deviceId === operation.deviceId,
+    )
+    .slice(0, 5)
+    .map((item) => ({
+      id: item.id,
+      merchant: item.merchant,
+      amount: item.amount,
+      currency: item.currency,
+      status: item.status,
+      riskLevel: item.riskLevel,
+      createdAt: item.createdAt,
+      relation:
+        item.customerId === operation.customerId
+          ? 'same customer'
+          : 'same device',
+    }));
+}
+
 export const handlers = [
   http.get('/api/operations', async ({ request }) => {
+    const scenarioResponse = await maybeApplyScenario(request);
+
+    if (scenarioResponse) {
+      return scenarioResponse;
+    }
+
     const url = new URL(request.url);
 
     const rawPage = Number(url.searchParams.get('page') ?? '1');
@@ -601,21 +838,43 @@ export const handlers = [
     });
   }),
 
-  http.get('/api/operations/:id', async ({ params }) => {
+  http.get('/api/operations/:id', async ({ params, request }) => {
+    const scenarioResponse = await maybeApplyScenario(request);
+
+    if (scenarioResponse) {
+      return scenarioResponse;
+    }
+
     const operation = operations.find((item) => item.id === params.id);
 
     if (!operation) {
       return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
     }
 
-    return HttpResponse.json(operation);
+    return HttpResponse.json({
+      ...operation,
+      relatedOperations: buildRelatedOperations(operation),
+    });
   }),
 
   http.patch('/api/operations/:id/status', async ({ params, request }) => {
+    const scenarioResponse = await maybeApplyScenario(request);
+
+    if (scenarioResponse) {
+      return scenarioResponse;
+    }
+
     const operation = operations.find((item) => item.id === params.id);
 
     if (!operation) {
       return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
+    }
+
+    if (getScenario(request) === 'conflict') {
+      return HttpResponse.json(
+        { message: 'Operation was already updated by another analyst' },
+        { status: 409 },
+      );
     }
 
     const body = (await request.json()) as StatusUpdateRequest;
@@ -627,10 +886,26 @@ export const handlers = [
 
     applyStatusChange(operation, nextStatus, body.reason, body.comment);
 
-    return HttpResponse.json(operation);
+    return HttpResponse.json({
+      ...operation,
+      relatedOperations: buildRelatedOperations(operation),
+    });
   }),
 
   http.patch('/api/operations/bulk-status', async ({ request }) => {
+    const scenarioResponse = await maybeApplyScenario(request);
+
+    if (scenarioResponse) {
+      return scenarioResponse;
+    }
+
+    if (getScenario(request) === 'conflict') {
+      return HttpResponse.json(
+        { message: 'Some operations were already updated by another analyst' },
+        { status: 409 },
+      );
+    }
+
     const body = (await request.json()) as {
       ids?: string[];
       status?: OperationStatus;

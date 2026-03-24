@@ -200,8 +200,8 @@ export function DashboardPage() {
                     Status distribution
                   </Typography>
 
-                  <Box sx={{ width: '100%', height: 320 }}>
-                    <ResponsiveContainer>
+                  <Box sx={{ width: '100%', minWidth: 0, height: 320 }}>
+                    <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={statusBreakdown}
@@ -233,8 +233,8 @@ export function DashboardPage() {
                     Risk distribution
                   </Typography>
 
-                  <Box sx={{ width: '100%', height: 320 }}>
-                    <ResponsiveContainer>
+                  <Box sx={{ width: '100%', minWidth: 0, height: 320 }}>
+                    <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={riskBreakdown}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="name" />
@@ -285,6 +285,7 @@ export function DashboardPage() {
                                 <Typography variant="subtitle1">{operation.merchant}</Typography>
                                 <StatusChip status={operation.status} />
                                 <RiskLevelChip riskLevel={operation.riskLevel} />
+                                <Chip size="small" label={`score ${operation.riskScore}`} />
                               </Stack>
                             }
                             secondary={
