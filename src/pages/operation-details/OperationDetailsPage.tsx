@@ -10,13 +10,19 @@ import {
   List,
   ListItem,
   ListItemText,
+  Snackbar,
   Stack,
   Typography,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
-import { getOperationById } from '@/entities/operation/api/getOperations';
+import {
+  getOperationById,
+  updateOperationStatus,
+  type OperationStatus,
+} from '@/entities/operation/api/getOperations';
 
 function getRiskColor(riskLevel: 'low' | 'medium' | 'high') {
   if (riskLevel === 'high') return 'error';
@@ -33,12 +39,37 @@ function getStatusColor(status: 'new' | 'in_review' | 'approved' | 'blocked' | '
 
 export function OperationDetailsPage() {
   const { id = '' } = useParams();
+  const queryClient = useQueryClient();
+
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['operation', id],
     queryFn: () => getOperationById(id),
     enabled: Boolean(id),
   });
+
+  const statusMutation = useMutation({
+    mutationFn: (nextStatus: OperationStatus) => updateOperationStatus(id, nextStatus),
+    onSuccess: async (updatedOperation) => {
+      queryClient.setQueryData(['operation', id], updatedOperation);
+      await queryClient.invalidateQueries({ queryKey: ['operations'] });
+      await queryClient.invalidateQueries({ queryKey: ['operation', id] });
+      setSuccessMessage(`Статус обновлён: ${updatedOperation.status}`);
+      setErrorMessage('');
+    },
+    onError: (mutationError) => {
+      setErrorMessage(
+        mutationError instanceof Error ? mutationError.message : 'Не удалось обновить статус',
+      );
+      setSuccessMessage('');
+    },
+  });
+
+  const handleStatusChange = (nextStatus: OperationStatus) => {
+    statusMutation.mutate(nextStatus);
+  };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -217,19 +248,57 @@ export function OperationDetailsPage() {
                 </Typography>
 
                 <Stack spacing={1}>
-                  <Button variant="contained">Approve</Button>
-                  <Button variant="outlined" color="warning">
+                  <Button
+                    variant="contained"
+                    disabled={statusMutation.isPending || data.status === 'approved'}
+                    onClick={() => handleStatusChange('approved')}
+                  >
+                    {statusMutation.isPending ? 'Updating...' : 'Approve'}
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    disabled={statusMutation.isPending || data.status === 'in_review'}
+                    onClick={() => handleStatusChange('in_review')}
+                  >
                     Send to review
                   </Button>
-                  <Button variant="outlined" color="error">
+
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    disabled={statusMutation.isPending || data.status === 'blocked'}
+                    onClick={() => handleStatusChange('blocked')}
+                  >
                     Block operation
                   </Button>
                 </Stack>
+
+                {statusMutation.isPending && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                    Updating operation status...
+                  </Typography>
+                )}
               </CardContent>
             </Card>
           </Grid>
         </Grid>
       )}
+
+      <Snackbar
+        open={Boolean(successMessage)}
+        autoHideDuration={3000}
+        onClose={() => setSuccessMessage('')}
+        message={successMessage}
+      />
+
+      <Snackbar
+        open={Boolean(errorMessage)}
+        autoHideDuration={4000}
+        onClose={() => setErrorMessage('')}
+        message={errorMessage}
+      />
     </Box>
   );
 }

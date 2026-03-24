@@ -43,23 +43,39 @@ export const operationDetailsSchema = operationListItemSchema.extend({
 
 export const operationsResponseSchema = z.array(operationListItemSchema);
 
+export const updateOperationStatusBodySchema = z.object({
+  status: operationStatusSchema,
+});
+
 export type Operation = z.infer<typeof operationListItemSchema>;
 export type OperationDetails = z.infer<typeof operationDetailsSchema>;
 export type OperationHistoryEvent = z.infer<typeof operationHistoryEventSchema>;
+export type OperationStatus = z.infer<typeof operationStatusSchema>;
 
 async function parseJsonResponse<T>(response: Response, schema: z.ZodSchema<T>): Promise<T> {
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
-
   const text = await response.text();
 
+  let json: unknown;
+
   try {
-    const json = JSON.parse(text);
-    return schema.parse(json);
+    json = JSON.parse(text);
   } catch {
     throw new Error(`Expected JSON, got: ${text.slice(0, 120)}`);
   }
+
+  if (!response.ok) {
+    const message =
+      typeof json === 'object' &&
+      json !== null &&
+      'message' in json &&
+      typeof json.message === 'string'
+        ? json.message
+        : `Request failed: ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return schema.parse(json);
 }
 
 export async function getOperations(): Promise<Operation[]> {
@@ -69,10 +85,22 @@ export async function getOperations(): Promise<Operation[]> {
 
 export async function getOperationById(id: string): Promise<OperationDetails> {
   const response = await fetch(`/api/operations/${id}`);
+  return parseJsonResponse(response, operationDetailsSchema);
+}
 
-  if (response.status === 404) {
-    throw new Error('Operation not found');
-  }
+export async function updateOperationStatus(
+  id: string,
+  status: OperationStatus,
+): Promise<OperationDetails> {
+  const requestBody = updateOperationStatusBodySchema.parse({ status });
+
+  const response = await fetch(`/api/operations/${id}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
 
   return parseJsonResponse(response, operationDetailsSchema);
 }
