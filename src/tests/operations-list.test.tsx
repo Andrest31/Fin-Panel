@@ -1,23 +1,35 @@
-import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { OperationsListPage } from '@/pages/operations-list/OperationsListPage';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { server } from '../mocks/server';
+import { OperationsListPage } from '../pages/operations-list/OperationsListPage';
 
-function createWrapper(children: React.ReactNode) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
   });
 
-  return (
-    <MemoryRouter>
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    </MemoryRouter>
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <OperationsListPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
 describe('OperationsListPage', () => {
   it('renders operations from mock API', async () => {
-    render(createWrapper(<OperationsListPage />));
+    renderPage();
 
     expect(await screen.findByText(/TechMarket/i)).toBeInTheDocument();
     expect(screen.getByText(/Daily Coffee/i)).toBeInTheDocument();
