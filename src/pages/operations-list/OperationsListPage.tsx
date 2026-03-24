@@ -19,7 +19,20 @@ import { OperationsTableSkeleton } from '@/widgets/operations-table/OperationsTa
 function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues): Operation[] {
   const normalizedSearch = filters.search.trim().toLowerCase();
 
+  const minAmount = filters.minAmount ? Number(filters.minAmount) : null;
+  const maxAmount = filters.maxAmount ? Number(filters.maxAmount) : null;
+
+  const dateFromTimestamp = filters.dateFrom
+    ? new Date(`${filters.dateFrom}T00:00:00`).getTime()
+    : null;
+
+  const dateToTimestamp = filters.dateTo
+    ? new Date(`${filters.dateTo}T23:59:59.999`).getTime()
+    : null;
+
   const filtered = data.filter((operation) => {
+    const createdAtTimestamp = new Date(operation.createdAt).getTime();
+
     const matchesSearch =
       normalizedSearch.length === 0 || operation.merchant.toLowerCase().includes(normalizedSearch);
 
@@ -28,7 +41,35 @@ function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues)
     const matchesRiskLevel =
       filters.riskLevel === 'all' || operation.riskLevel === filters.riskLevel;
 
-    return matchesSearch && matchesStatus && matchesRiskLevel;
+    const matchesPaymentMethod =
+      filters.paymentMethod === 'all' || operation.paymentMethod === filters.paymentMethod;
+
+    const matchesCountry =
+      filters.country === 'all' || operation.country === filters.country;
+
+    const matchesMinAmount =
+      minAmount === null || Number.isNaN(minAmount) || operation.amount >= minAmount;
+
+    const matchesMaxAmount =
+      maxAmount === null || Number.isNaN(maxAmount) || operation.amount <= maxAmount;
+
+    const matchesDateFrom =
+      dateFromTimestamp === null || createdAtTimestamp >= dateFromTimestamp;
+
+    const matchesDateTo =
+      dateToTimestamp === null || createdAtTimestamp <= dateToTimestamp;
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesRiskLevel &&
+      matchesPaymentMethod &&
+      matchesCountry &&
+      matchesMinAmount &&
+      matchesMaxAmount &&
+      matchesDateFrom &&
+      matchesDateTo
+    );
   });
 
   const sorted = [...filtered].sort((a, b) => {

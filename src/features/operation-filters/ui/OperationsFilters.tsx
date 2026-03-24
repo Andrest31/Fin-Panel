@@ -29,7 +29,13 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
   }, [
     debouncedSearch,
     onChange,
+    value.country,
+    value.dateFrom,
+    value.dateTo,
+    value.maxAmount,
+    value.minAmount,
     value.order,
+    value.paymentMethod,
     value.riskLevel,
     value.search,
     value.sortBy,
@@ -38,88 +44,179 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
 
   return (
     <Paper sx={{ p: 2, mb: 3 }}>
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-        <TextField
-          label="Search merchant"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          fullWidth
-        />
+      <Stack spacing={2}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <TextField
+            label="Search merchant"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            fullWidth
+          />
 
-        <TextField
-          select
-          label="Status"
-          value={value.status}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              status: event.target.value as OperationsFilterValues['status'],
-            })
-          }
-          sx={{ minWidth: 180 }}
-        >
-          <MenuItem value="all">All</MenuItem>
-          <MenuItem value="new">New</MenuItem>
-          <MenuItem value="in_review">In review</MenuItem>
-          <MenuItem value="approved">Approved</MenuItem>
-          <MenuItem value="blocked">Blocked</MenuItem>
-          <MenuItem value="flagged">Flagged</MenuItem>
-        </TextField>
+          <TextField
+            select
+            label="Status"
+            value={value.status}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                status: event.target.value as OperationsFilterValues['status'],
+              })
+            }
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="new">New</MenuItem>
+            <MenuItem value="in_review">In review</MenuItem>
+            <MenuItem value="approved">Approved</MenuItem>
+            <MenuItem value="blocked">Blocked</MenuItem>
+            <MenuItem value="flagged">Flagged</MenuItem>
+          </TextField>
 
-        <TextField
-          select
-          label="Risk level"
-          value={value.riskLevel}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              riskLevel: event.target.value as OperationsFilterValues['riskLevel'],
-            })
-          }
-          sx={{ minWidth: 180 }}
-        >
-          <MenuItem value="all">All</MenuItem>
-          <MenuItem value="low">Low</MenuItem>
-          <MenuItem value="medium">Medium</MenuItem>
-          <MenuItem value="high">High</MenuItem>
-        </TextField>
+          <TextField
+            select
+            label="Risk level"
+            value={value.riskLevel}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                riskLevel: event.target.value as OperationsFilterValues['riskLevel'],
+              })
+            }
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="low">Low</MenuItem>
+            <MenuItem value="medium">Medium</MenuItem>
+            <MenuItem value="high">High</MenuItem>
+          </TextField>
 
-        <TextField
-          select
-          label="Sort by"
-          value={value.sortBy}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              sortBy: event.target.value as OperationsFilterValues['sortBy'],
-            })
-          }
-          sx={{ minWidth: 180 }}
-        >
-          <MenuItem value="createdAt">Created at</MenuItem>
-          <MenuItem value="amount">Amount</MenuItem>
-          <MenuItem value="merchant">Merchant</MenuItem>
-        </TextField>
+          <TextField
+            select
+            label="Payment"
+            value={value.paymentMethod}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                paymentMethod: event.target.value as OperationsFilterValues['paymentMethod'],
+              })
+            }
+            sx={{ minWidth: 160 }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="card">Card</MenuItem>
+            <MenuItem value="sbp">SBP</MenuItem>
+          </TextField>
 
-        <TextField
-          select
-          label="Order"
-          value={value.order}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              order: event.target.value as OperationsFilterValues['order'],
-            })
-          }
-          sx={{ minWidth: 140 }}
-        >
-          <MenuItem value="desc">Desc</MenuItem>
-          <MenuItem value="asc">Asc</MenuItem>
-        </TextField>
+          <TextField
+            select
+            label="Country"
+            value={value.country}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                country: event.target.value as OperationsFilterValues['country'],
+              })
+            }
+            sx={{ minWidth: 140 }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="RU">RU</MenuItem>
+          </TextField>
+        </Stack>
 
-        <Button variant="outlined" onClick={onReset}>
-          Reset
-        </Button>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <TextField
+            label="Min amount"
+            type="number"
+            value={value.minAmount}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                minAmount: event.target.value,
+              })
+            }
+            sx={{ minWidth: 160 }}
+          />
+
+          <TextField
+            label="Max amount"
+            type="number"
+            value={value.maxAmount}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                maxAmount: event.target.value,
+              })
+            }
+            sx={{ minWidth: 160 }}
+          />
+
+          <TextField
+            label="Date from"
+            type="date"
+            value={value.dateFrom}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                dateFrom: event.target.value,
+              })
+            }
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 170 }}
+          />
+
+          <TextField
+            label="Date to"
+            type="date"
+            value={value.dateTo}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                dateTo: event.target.value,
+              })
+            }
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 170 }}
+          />
+
+          <TextField
+            select
+            label="Sort by"
+            value={value.sortBy}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                sortBy: event.target.value as OperationsFilterValues['sortBy'],
+              })
+            }
+            sx={{ minWidth: 160 }}
+          >
+            <MenuItem value="createdAt">Created at</MenuItem>
+            <MenuItem value="amount">Amount</MenuItem>
+            <MenuItem value="merchant">Merchant</MenuItem>
+          </TextField>
+
+          <TextField
+            select
+            label="Order"
+            value={value.order}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                order: event.target.value as OperationsFilterValues['order'],
+              })
+            }
+            sx={{ minWidth: 140 }}
+          >
+            <MenuItem value="desc">Desc</MenuItem>
+            <MenuItem value="asc">Asc</MenuItem>
+          </TextField>
+
+          <Button variant="outlined" onClick={onReset}>
+            Reset
+          </Button>
+        </Stack>
       </Stack>
     </Paper>
   );
