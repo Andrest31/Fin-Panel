@@ -4,14 +4,15 @@ import {
   Chip,
   CircularProgress,
   List,
-  ListItem,
+  ListItemButton,
   ListItemText,
+  Paper,
   Stack,
   Typography,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { getOperations, type Operation } from '@/entities/operation/api/getOperations';
 import { getOperationsFiltersFromSearchParams, toOperationsSearchParams } from '@/features/operation-filters/lib/searchParams';
 import { defaultOperationsFilters, type OperationsFilterValues } from '@/features/operation-filters/model/types';
@@ -113,16 +114,23 @@ export function OperationsListPage() {
       )}
 
       {filteredOperations.length > 0 && (
-        <List>
-          {filteredOperations.map((operation) => (
-            <ListItem key={operation.id} divider>
-              <ListItemText
-                primary={operation.merchant}
-                secondary={`${operation.amount} ${operation.currency} • ${operation.status} • risk: ${operation.riskLevel} • ${new Date(operation.createdAt).toLocaleString()}`}
-              />
-            </ListItem>
-          ))}
-        </List>
+        <Paper variant="outlined">
+          <List disablePadding>
+            {filteredOperations.map((operation, index) => (
+              <ListItemButton
+                key={operation.id}
+                component={RouterLink}
+                to={`/operations/${operation.id}`}
+                divider={index < filteredOperations.length - 1}
+              >
+                <ListItemText
+                  primary={operation.merchant}
+                  secondary={`${operation.amount} ${operation.currency} • ${operation.status} • risk: ${operation.riskLevel} • ${new Date(operation.createdAt).toLocaleString()}`}
+                />
+              </ListItemButton>
+            ))}
+          </List>
+        </Paper>
       )}
     </Box>
   );

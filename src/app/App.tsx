@@ -1,6 +1,7 @@
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { OperationDetailsPage } from '../pages/operation-details/OperationDetailsPage';
 import { OperationsListPage } from '../pages/operations-list/OperationsListPage';
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/operations" replace />} />
             <Route path="/operations" element={<OperationsListPage />} />
+            <Route path="/operations/:id" element={<OperationDetailsPage />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>
