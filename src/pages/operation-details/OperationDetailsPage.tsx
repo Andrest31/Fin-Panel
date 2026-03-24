@@ -21,8 +21,14 @@ import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
   getOperationById,
   updateOperationStatus,
+  type Operation,
+  type OperationDetails,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
+import {
+  applyOptimisticDecisionToOperation,
+  applyOptimisticDecisionToOperationDetails,
+} from '@/entities/operation/lib/optimisticUpdates';
 import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
 
 function getRiskColor(riskLevel: 'low' | 'medium' | 'high') {
@@ -37,6 +43,17 @@ function getStatusColor(status: 'new' | 'in_review' | 'approved' | 'blocked' | '
   if (status === 'in_review') return 'warning';
   return 'default';
 }
+
+type DecisionPayload = {
+  status: OperationStatus;
+  reason: string;
+  comment: string;
+};
+
+type MutationContext = {
+  previousOperation?: OperationDetails;
+  previousOperations?: Operation[];
+};
 
 export function OperationDetailsPage() {
   const { id = '' } = useParams();
@@ -53,21 +70,65 @@ export function OperationDetailsPage() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: (payload: { status: OperationStatus; reason: string; comment: string }) =>
-      updateOperationStatus(id, payload),
-    onSuccess: async (updatedOperation) => {
-      queryClient.setQueryData(['operation', id], updatedOperation);
-      await queryClient.invalidateQueries({ queryKey: ['operations'] });
-      await queryClient.invalidateQueries({ queryKey: ['operation', id] });
-      setSuccessMessage(`Статус обновлён: ${updatedOperation.status}`);
+    mutationFn: (payload: DecisionPayload) => updateOperationStatus(id, payload),
+
+    onMutate: async (payload): Promise<MutationContext> => {
+      await queryClient.cancelQueries({ queryKey: ['operation', id] });
+      await queryClient.cancelQueries({ queryKey: ['operations'] });
+
+      const previousOperation = queryClient.getQueryData<OperationDetails>(['operation', id]);
+      const previousOperations = queryClient.getQueryData<Operation[]>(['operations']);
+
+      if (previousOperation) {
+        queryClient.setQueryData<OperationDetails>(
+          ['operation', id],
+          applyOptimisticDecisionToOperationDetails(previousOperation, payload),
+        );
+      }
+
+      if (previousOperations) {
+        queryClient.setQueryData<Operation[]>(
+          ['operations'],
+          previousOperations.map((operation) =>
+            operation.id === id
+              ? applyOptimisticDecisionToOperation(operation, payload)
+              : operation,
+          ),
+        );
+      }
+
       setErrorMessage('');
+
+      return {
+        previousOperation,
+        previousOperations,
+      };
+    },
+
+    onSuccess: (updatedOperation) => {
+      queryClient.setQueryData(['operation', id], updatedOperation);
+      setSuccessMessage(`Статус обновлён: ${updatedOperation.status}`);
       setPendingStatus(null);
     },
-    onError: (mutationError) => {
+
+    onError: (mutationError, _payload, context) => {
+      if (context?.previousOperation) {
+        queryClient.setQueryData(['operation', id], context.previousOperation);
+      }
+
+      if (context?.previousOperations) {
+        queryClient.setQueryData(['operations'], context.previousOperations);
+      }
+
       setErrorMessage(
         mutationError instanceof Error ? mutationError.message : 'Не удалось обновить статус',
       );
       setSuccessMessage('');
+    },
+
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['operations'] });
+      await queryClient.invalidateQueries({ queryKey: ['operation', id] });
     },
   });
 

@@ -1,13 +1,19 @@
 import { Alert, Box, Chip, Snackbar, Stack, TablePagination, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ChangeEvent } from 'react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   bulkUpdateOperationStatus,
   getOperations,
   type Operation,
+  type OperationDetails,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
+import {
+  applyOptimisticDecisionToOperationDetails,
+  applyOptimisticDecisionToOperationsList,
+} from '@/entities/operation/lib/optimisticUpdates';
 import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
 import { getOperationsFiltersFromSearchParams, toOperationsSearchParams } from '@/features/operation-filters/lib/searchParams';
 import { defaultOperationsFilters, type OperationsFilterValues } from '@/features/operation-filters/model/types';
@@ -89,6 +95,17 @@ function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues)
   return sorted;
 }
 
+type DecisionPayload = {
+  status: OperationStatus;
+  reason: string;
+  comment: string;
+};
+
+type MutationContext = {
+  previousOperations?: Operation[];
+  previousOperationDetails: Array<[string, OperationDetails | undefined]>;
+};
+
 export function OperationsListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -134,24 +151,78 @@ export function OperationsListPage() {
       reason: string;
       comment: string;
     }) => bulkUpdateOperationStatus(ids, { status, reason, comment }),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ['operations'] });
-      await Promise.all(
-        result.updatedIds.map((id) =>
-          queryClient.invalidateQueries({ queryKey: ['operation', id] }),
-        ),
-      );
 
+    onMutate: async ({
+      ids,
+      status,
+      reason,
+      comment,
+    }): Promise<MutationContext> => {
+      const payload: DecisionPayload = { status, reason, comment };
+
+      await queryClient.cancelQueries({ queryKey: ['operations'] });
+
+      const previousOperations = queryClient.getQueryData<Operation[]>(['operations']);
+      const previousOperationDetails: Array<[string, OperationDetails | undefined]> = ids.map((id) => [
+        id,
+        queryClient.getQueryData<OperationDetails>(['operation', id]),
+      ]);
+
+      if (previousOperations) {
+        queryClient.setQueryData<Operation[]>(
+          ['operations'],
+          applyOptimisticDecisionToOperationsList(previousOperations, ids, payload),
+        );
+      }
+
+      previousOperationDetails.forEach(([operationId, operationDetails]) => {
+        if (!operationDetails) return;
+
+        queryClient.setQueryData<OperationDetails>(
+          ['operation', operationId],
+          applyOptimisticDecisionToOperationDetails(operationDetails, payload),
+        );
+      });
+
+      setErrorMessage('');
+
+      return {
+        previousOperations,
+        previousOperationDetails,
+      };
+    },
+
+    onSuccess: (result) => {
       setSelectedIds([]);
       setPendingBulkStatus(null);
       setSuccessMessage(`Обновлено операций: ${result.updatedIds.length}`);
       setErrorMessage('');
     },
-    onError: (mutationError) => {
+
+    onError: (mutationError, _variables, context) => {
+      if (context?.previousOperations) {
+        queryClient.setQueryData(['operations'], context.previousOperations);
+      }
+
+      context?.previousOperationDetails.forEach(([operationId, operationDetails]) => {
+        if (operationDetails) {
+          queryClient.setQueryData(['operation', operationId], operationDetails);
+        }
+      });
+
       setErrorMessage(
         mutationError instanceof Error ? mutationError.message : 'Не удалось обновить операции',
       );
       setSuccessMessage('');
+    },
+
+    onSettled: async (_data, _error, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['operations'] });
+      await Promise.all(
+        variables.ids.map((id) =>
+          queryClient.invalidateQueries({ queryKey: ['operation', id] }),
+        ),
+      );
     },
   });
 
@@ -191,7 +262,7 @@ export function OperationsListPage() {
     setSelectedIds([]);
   };
 
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChangeRowsPerPage = (event: ChangeEvent<HTMLInputElement>) => {
     setRowsPerPage(Number(event.target.value));
     setPage(0);
     setSelectedIds([]);
