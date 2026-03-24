@@ -1,4 +1,5 @@
 import {
+  Checkbox,
   Paper,
   Table,
   TableBody,
@@ -15,6 +16,9 @@ import { StatusChip } from '@/entities/operation/ui/StatusChip';
 
 type OperationsTableProps = {
   operations: Operation[];
+  selectedIds: string[];
+  onToggleOne: (id: string) => void;
+  onToggleAll: (ids: string[]) => void;
 };
 
 function formatAmount(amount: number, currency: string) {
@@ -25,12 +29,36 @@ function formatAmount(amount: number, currency: string) {
   }).format(amount);
 }
 
-export function OperationsTable({ operations }: OperationsTableProps) {
+export function OperationsTable({
+  operations,
+  selectedIds,
+  onToggleOne,
+  onToggleAll,
+}: OperationsTableProps) {
+  const allIds = operations.map((operation) => operation.id);
+  const selectedSet = new Set(selectedIds);
+
+  const selectedOnPageCount = allIds.filter((id) => selectedSet.has(id)).length;
+  const allSelected = operations.length > 0 && selectedOnPageCount === operations.length;
+  const indeterminate =
+    selectedOnPageCount > 0 && selectedOnPageCount < operations.length;
+
+  const handleToggleAll = () => {
+    onToggleAll(allIds);
+  };
+
   return (
     <TableContainer component={Paper} variant="outlined">
       <Table>
         <TableHead>
           <TableRow>
+            <TableCell padding="checkbox">
+              <Checkbox
+                checked={allSelected}
+                indeterminate={indeterminate}
+                onChange={handleToggleAll}
+              />
+            </TableCell>
             <TableCell>Merchant</TableCell>
             <TableCell>Amount</TableCell>
             <TableCell>Status</TableCell>
@@ -42,52 +70,63 @@ export function OperationsTable({ operations }: OperationsTableProps) {
         </TableHead>
 
         <TableBody>
-          {operations.map((operation) => (
-            <TableRow
-              key={operation.id}
-              hover
-              sx={{
-                cursor: 'pointer',
-                '&:last-child td, &:last-child th': { border: 0 },
-              }}
-            >
-              <TableCell>
-                <Typography
-                  component={RouterLink}
-                  to={`/operations/${operation.id}`}
-                  sx={{
-                    color: 'inherit',
-                    textDecoration: 'none',
-                    fontWeight: 500,
-                    '&:hover': { textDecoration: 'underline' },
-                  }}
-                >
-                  {operation.merchant}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {operation.id}
-                </Typography>
-              </TableCell>
+          {operations.map((operation) => {
+            const isSelected = selectedSet.has(operation.id);
 
-              <TableCell>{formatAmount(operation.amount, operation.currency)}</TableCell>
+            return (
+              <TableRow
+                key={operation.id}
+                hover
+                selected={isSelected}
+                sx={{
+                  '&:last-child td, &:last-child th': { border: 0 },
+                }}
+              >
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={isSelected}
+                    onChange={() => onToggleOne(operation.id)}
+                  />
+                </TableCell>
 
-              <TableCell>
-                <StatusChip status={operation.status} />
-              </TableCell>
+                <TableCell>
+                  <Typography
+                    component={RouterLink}
+                    to={`/operations/${operation.id}`}
+                    sx={{
+                      color: 'inherit',
+                      textDecoration: 'none',
+                      fontWeight: 500,
+                      '&:hover': { textDecoration: 'underline' },
+                    }}
+                  >
+                    {operation.merchant}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {operation.id}
+                  </Typography>
+                </TableCell>
 
-              <TableCell>
-                <RiskLevelChip riskLevel={operation.riskLevel} />
-              </TableCell>
+                <TableCell>{formatAmount(operation.amount, operation.currency)}</TableCell>
 
-              <TableCell>
-                {operation.country} / {operation.city}
-              </TableCell>
+                <TableCell>
+                  <StatusChip status={operation.status} />
+                </TableCell>
 
-              <TableCell>{operation.paymentMethod}</TableCell>
+                <TableCell>
+                  <RiskLevelChip riskLevel={operation.riskLevel} />
+                </TableCell>
 
-              <TableCell>{new Date(operation.updatedAt).toLocaleString()}</TableCell>
-            </TableRow>
-          ))}
+                <TableCell>
+                  {operation.country} / {operation.city}
+                </TableCell>
+
+                <TableCell>{operation.paymentMethod}</TableCell>
+
+                <TableCell>{new Date(operation.updatedAt).toLocaleString()}</TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </TableContainer>

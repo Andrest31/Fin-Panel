@@ -47,10 +47,23 @@ export const updateOperationStatusBodySchema = z.object({
   status: operationStatusSchema,
 });
 
+export const bulkUpdateOperationStatusBodySchema = z.object({
+  ids: z.array(z.string()).min(1),
+  status: operationStatusSchema,
+});
+
+export const bulkUpdateOperationStatusResponseSchema = z.object({
+  updatedIds: z.array(z.string()),
+  status: operationStatusSchema,
+});
+
 export type Operation = z.infer<typeof operationListItemSchema>;
 export type OperationDetails = z.infer<typeof operationDetailsSchema>;
 export type OperationHistoryEvent = z.infer<typeof operationHistoryEventSchema>;
 export type OperationStatus = z.infer<typeof operationStatusSchema>;
+export type BulkUpdateOperationStatusResponse = z.infer<
+  typeof bulkUpdateOperationStatusResponseSchema
+>;
 
 async function parseJsonResponse<T>(response: Response, schema: z.ZodSchema<T>): Promise<T> {
   const text = await response.text();
@@ -103,4 +116,21 @@ export async function updateOperationStatus(
   });
 
   return parseJsonResponse(response, operationDetailsSchema);
+}
+
+export async function bulkUpdateOperationStatus(
+  ids: string[],
+  status: OperationStatus,
+): Promise<BulkUpdateOperationStatusResponse> {
+  const requestBody = bulkUpdateOperationStatusBodySchema.parse({ ids, status });
+
+  const response = await fetch('/api/operations/bulk-status', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  return parseJsonResponse(response, bulkUpdateOperationStatusResponseSchema);
 }

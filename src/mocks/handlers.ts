@@ -188,6 +188,22 @@ function getActionMeta(status: OperationStatus) {
   };
 }
 
+function applyStatusChange(operation: OperationRecord, nextStatus: OperationStatus) {
+  const now = new Date().toISOString();
+  const actionMeta = getActionMeta(nextStatus);
+
+  operation.status = nextStatus;
+  operation.updatedAt = now;
+  operation.reviewer = actionMeta.reviewer;
+  operation.history.unshift({
+    id: `evt_${Date.now()}_${operation.id}`,
+    type: actionMeta.eventType,
+    timestamp: now,
+    actor: actionMeta.reviewer,
+    comment: actionMeta.comment,
+  });
+}
+
 export const handlers = [
   http.get('/api/operations', async () => {
     return HttpResponse.json(operations.map(toListItem));
@@ -217,20 +233,36 @@ export const handlers = [
       return HttpResponse.json({ message: 'Status is required' }, { status: 400 });
     }
 
-    const now = new Date().toISOString();
-    const actionMeta = getActionMeta(nextStatus);
-
-    operation.status = nextStatus;
-    operation.updatedAt = now;
-    operation.reviewer = actionMeta.reviewer;
-    operation.history.unshift({
-      id: `evt_${Date.now()}`,
-      type: actionMeta.eventType,
-      timestamp: now,
-      actor: actionMeta.reviewer,
-      comment: actionMeta.comment,
-    });
+    applyStatusChange(operation, nextStatus);
 
     return HttpResponse.json(operation);
+  }),
+
+  http.patch('/api/operations/bulk-status', async ({ request }) => {
+    const body = (await request.json()) as {
+      ids?: string[];
+      status?: OperationStatus;
+    };
+
+    if (!Array.isArray(body.ids) || body.ids.length === 0) {
+      return HttpResponse.json({ message: 'ids are required' }, { status: 400 });
+    }
+
+    if (!body.status) {
+      return HttpResponse.json({ message: 'status is required' }, { status: 400 });
+    }
+
+    const updatedIds = new Set(body.ids);
+
+    operations.forEach((operation) => {
+      if (updatedIds.has(operation.id)) {
+        applyStatusChange(operation, body.status as OperationStatus);
+      }
+    });
+
+    return HttpResponse.json({
+      updatedIds: body.ids,
+      status: body.status,
+    });
   }),
 ];

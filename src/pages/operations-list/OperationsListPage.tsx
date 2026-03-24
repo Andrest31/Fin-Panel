@@ -1,11 +1,17 @@
-import { Alert, Box, Chip, CircularProgress, Stack, Typography } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { Alert, Box, Chip, CircularProgress, Snackbar, Stack, Typography } from '@mui/material';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getOperations, type Operation } from '@/entities/operation/api/getOperations';
+import {
+  bulkUpdateOperationStatus,
+  getOperations,
+  type Operation,
+  type OperationStatus,
+} from '@/entities/operation/api/getOperations';
 import { getOperationsFiltersFromSearchParams, toOperationsSearchParams } from '@/features/operation-filters/lib/searchParams';
 import { defaultOperationsFilters, type OperationsFilterValues } from '@/features/operation-filters/model/types';
 import { OperationsFilters } from '@/features/operation-filters/ui/OperationsFilters';
+import { BulkActionsBar } from '@/widgets/operations-table/BulkActionsBar';
 import { OperationsTable } from '@/widgets/operations-table/OperationsTable';
 
 function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues): Operation[] {
@@ -42,6 +48,11 @@ function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues)
 
 export function OperationsListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const queryClient = useQueryClient();
 
   const filters = useMemo(
     () => getOperationsFiltersFromSearchParams(searchParams),
@@ -58,13 +69,74 @@ export function OperationsListPage() {
     return applyFiltersAndSort(data ?? [], filters);
   }, [data, filters]);
 
+  const bulkMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: OperationStatus }) =>
+      bulkUpdateOperationStatus(ids, status),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ['operations'] });
+      await Promise.all(
+        result.updatedIds.map((id) =>
+          queryClient.invalidateQueries({ queryKey: ['operation', id] }),
+        ),
+      );
+
+      setSelectedIds([]);
+      setSuccessMessage(`Обновлено операций: ${result.updatedIds.length}`);
+      setErrorMessage('');
+    },
+    onError: (mutationError) => {
+      setErrorMessage(
+        mutationError instanceof Error ? mutationError.message : 'Не удалось обновить операции',
+      );
+      setSuccessMessage('');
+    },
+  });
+
   const handleFiltersChange = (nextFilters: OperationsFilterValues) => {
     setSearchParams(toOperationsSearchParams(nextFilters));
+    setSelectedIds([]);
   };
 
   const handleReset = () => {
     setSearchParams(toOperationsSearchParams(defaultOperationsFilters));
+    setSelectedIds([]);
   };
+
+  const handleToggleOne = (id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    );
+  };
+
+  const handleToggleAll = (idsOnPage: string[]) => {
+    const allSelected = idsOnPage.every((id) => selectedIds.includes(id));
+
+    setSelectedIds((current) => {
+      if (allSelected) {
+        return current.filter((id) => !idsOnPage.includes(id));
+      }
+
+      const next = new Set([...current, ...idsOnPage]);
+      return Array.from(next);
+    });
+  };
+
+  const handleBulkApply = (status: OperationStatus) => {
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    bulkMutation.mutate({
+      ids: selectedIds,
+      status,
+    });
+  };
+
+  const visibleSelectedIds = selectedIds.filter((id) =>
+    filteredOperations.some((operation) => operation.id === id),
+  );
 
   return (
     <Box sx={{ p: 3 }}>
@@ -82,8 +154,18 @@ export function OperationsListPage() {
         onReset={handleReset}
       />
 
+      {visibleSelectedIds.length > 0 && (
+        <BulkActionsBar
+          selectedCount={visibleSelectedIds.length}
+          isPending={bulkMutation.isPending}
+          onApply={handleBulkApply}
+          onReset={() => setSelectedIds([])}
+        />
+      )}
+
       <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
         <Chip label={`Found: ${filteredOperations.length}`} />
+        <Chip label={`Selected: ${visibleSelectedIds.length}`} />
         <Chip label={`Sort: ${filters.sortBy}`} />
         <Chip label={`Order: ${filters.order}`} />
         {isFetching && !isLoading ? <Chip label="Refreshing..." color="warning" /> : null}
@@ -102,8 +184,27 @@ export function OperationsListPage() {
       )}
 
       {!isLoading && !isError && filteredOperations.length > 0 && (
-        <OperationsTable operations={filteredOperations} />
+        <OperationsTable
+          operations={filteredOperations}
+          selectedIds={visibleSelectedIds}
+          onToggleOne={handleToggleOne}
+          onToggleAll={handleToggleAll}
+        />
       )}
+
+      <Snackbar
+        open={Boolean(successMessage)}
+        autoHideDuration={3000}
+        onClose={() => setSuccessMessage('')}
+        message={successMessage}
+      />
+
+      <Snackbar
+        open={Boolean(errorMessage)}
+        autoHideDuration={4000}
+        onClose={() => setErrorMessage('')}
+        message={errorMessage}
+      />
     </Box>
   );
 }
