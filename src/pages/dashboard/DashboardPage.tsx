@@ -132,12 +132,18 @@ function getLatestOperations(operations: Operation[]): Operation[] {
 
 export function DashboardPage() {
   const { data, isLoading, isError, error, isFetching } = useQuery({
-    queryKey: ['operations'],
-    queryFn: getOperations,
+    queryKey: ['operations-dashboard'],
+    queryFn: () =>
+      getOperations({
+        page: 1,
+        pageSize: 100,
+        sortBy: 'createdAt',
+        order: 'desc',
+      }),
     refetchInterval: 10000,
   });
 
-  const operations = data ?? [];
+  const operations = data?.items ?? [];
   const metrics = getDashboardMetrics(operations);
   const statusBreakdown = getStatusBreakdown(operations);
   const riskBreakdown = getRiskBreakdown(operations);
@@ -250,91 +256,84 @@ export function DashboardPage() {
               </Card>
             </Grid>
 
-            <Grid size={{ xs: 12, xl: 6 }}>
+            <Grid size={{ xs: 12, lg: 7 }}>
               <Card sx={{ height: '100%' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2 }}>
-                    Top flag reasons
-                  </Typography>
-
-                  {topFlagReasons.length > 0 ? (
-                    <Box sx={{ width: '100%', height: 320 }}>
-                      <ResponsiveContainer>
-                        <BarChart
-                          data={topFlagReasons.map((item) => ({
-                            name: item.reason,
-                            value: item.count,
-                          }))}
-                          layout="vertical"
-                        >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" allowDecimals={false} />
-                          <YAxis type="category" dataKey="name" width={130} />
-                          <Tooltip />
-                          <Legend />
-                          <Bar dataKey="value" name="Count" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      No flag reasons yet
-                    </Typography>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid size={{ xs: 12, xl: 6 }}>
-              <Card sx={{ height: '100%' }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ mb: 2 }}>
-                    Latest updated operations
+                    Latest operations
                   </Typography>
 
                   <List>
                     {latestOperations.map((operation, index) => (
                       <Box key={operation.id}>
                         <ListItem
-                          disableGutters
                           component={RouterLink}
                           to={`/operations/${operation.id}`}
                           sx={{
                             color: 'inherit',
                             textDecoration: 'none',
-                            display: 'block',
+                            alignItems: 'flex-start',
                           }}
                         >
-                          <Stack
-                            direction={{ xs: 'column', md: 'row' }}
-                            spacing={2}
-                            justifyContent="space-between"
-                            alignItems={{ xs: 'flex-start', md: 'center' }}
-                          >
-                            <ListItemText
-                              primary={operation.merchant}
-                              secondary={`${operation.id} • ${new Date(operation.updatedAt).toLocaleString()}`}
-                            />
-
-                            <Stack direction="row" spacing={1}>
-                              <StatusChip status={operation.status} />
-                              <RiskLevelChip riskLevel={operation.riskLevel} />
-                              <Chip
-                                label={new Intl.NumberFormat('ru-RU', {
-                                  style: 'currency',
-                                  currency: operation.currency,
-                                  maximumFractionDigits: 0,
-                                }).format(operation.amount)}
-                                size="small"
-                                variant="outlined"
-                              />
-                            </Stack>
-                          </Stack>
+                          <ListItemText
+                            primary={
+                              <Stack
+                                direction={{ xs: 'column', md: 'row' }}
+                                spacing={1}
+                                alignItems={{ xs: 'flex-start', md: 'center' }}
+                              >
+                                <Typography variant="subtitle1">{operation.merchant}</Typography>
+                                <StatusChip status={operation.status} />
+                                <RiskLevelChip riskLevel={operation.riskLevel} />
+                              </Stack>
+                            }
+                            secondary={
+                              <>
+                                <Typography variant="body2" color="text.secondary">
+                                  {operation.amount} {operation.currency} • {operation.country} / {operation.city}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  Updated: {new Date(operation.updatedAt).toLocaleString()}
+                                </Typography>
+                              </>
+                            }
+                          />
                         </ListItem>
 
                         {index < latestOperations.length - 1 ? <Divider /> : null}
                       </Box>
                     ))}
+                  </List>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid size={{ xs: 12, lg: 5 }}>
+              <Card sx={{ height: '100%' }}>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2 }}>
+                    Top flag reasons
+                  </Typography>
+
+                  <List>
+                    {topFlagReasons.map((item, index) => (
+                      <Box key={item.reason}>
+                        <ListItem disableGutters>
+                          <ListItemText
+                            primary={item.reason}
+                            secondary={`Count: ${item.count}`}
+                          />
+                        </ListItem>
+
+                        {index < topFlagReasons.length - 1 ? <Divider /> : null}
+                      </Box>
+                    ))}
+
+                    {topFlagReasons.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No flag reasons available
+                      </Typography>
+                    ) : null}
                   </List>
                 </CardContent>
               </Card>

@@ -1,4 +1,13 @@
-import { Alert, Box, Chip, Snackbar, Stack, TablePagination, Typography } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Snackbar,
+  Stack,
+  TablePagination,
+  Typography,
+} from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ChangeEvent } from 'react';
 import { useMemo, useState } from 'react';
@@ -6,13 +15,14 @@ import { useSearchParams } from 'react-router-dom';
 import {
   bulkUpdateOperationStatus,
   getOperations,
-  type Operation,
+  type GetOperationsParams,
+  type GetOperationsResponse,
   type OperationDetails,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
 import {
   applyOptimisticDecisionToOperationDetails,
-  applyOptimisticDecisionToOperationsList,
+  applyOptimisticDecisionToOperationsResponse,
 } from '@/entities/operation/lib/optimisticUpdates';
 import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
 import { getOperationsFiltersFromSearchParams, toOperationsSearchParams } from '@/features/operation-filters/lib/searchParams';
@@ -22,79 +32,6 @@ import { BulkActionsBar } from '@/widgets/operations-table/BulkActionsBar';
 import { OperationsTable } from '@/widgets/operations-table/OperationsTable';
 import { OperationsTableSkeleton } from '@/widgets/operations-table/OperationsTableSkeleton';
 
-function applyFiltersAndSort(data: Operation[], filters: OperationsFilterValues): Operation[] {
-  const normalizedSearch = filters.search.trim().toLowerCase();
-
-  const minAmount = filters.minAmount ? Number(filters.minAmount) : null;
-  const maxAmount = filters.maxAmount ? Number(filters.maxAmount) : null;
-
-  const dateFromTimestamp = filters.dateFrom
-    ? new Date(`${filters.dateFrom}T00:00:00`).getTime()
-    : null;
-
-  const dateToTimestamp = filters.dateTo
-    ? new Date(`${filters.dateTo}T23:59:59.999`).getTime()
-    : null;
-
-  const filtered = data.filter((operation) => {
-    const createdAtTimestamp = new Date(operation.createdAt).getTime();
-
-    const matchesSearch =
-      normalizedSearch.length === 0 || operation.merchant.toLowerCase().includes(normalizedSearch);
-
-    const matchesStatus = filters.status === 'all' || operation.status === filters.status;
-
-    const matchesRiskLevel =
-      filters.riskLevel === 'all' || operation.riskLevel === filters.riskLevel;
-
-    const matchesPaymentMethod =
-      filters.paymentMethod === 'all' || operation.paymentMethod === filters.paymentMethod;
-
-    const matchesCountry =
-      filters.country === 'all' || operation.country === filters.country;
-
-    const matchesMinAmount =
-      minAmount === null || Number.isNaN(minAmount) || operation.amount >= minAmount;
-
-    const matchesMaxAmount =
-      maxAmount === null || Number.isNaN(maxAmount) || operation.amount <= maxAmount;
-
-    const matchesDateFrom =
-      dateFromTimestamp === null || createdAtTimestamp >= dateFromTimestamp;
-
-    const matchesDateTo =
-      dateToTimestamp === null || createdAtTimestamp <= dateToTimestamp;
-
-    return (
-      matchesSearch &&
-      matchesStatus &&
-      matchesRiskLevel &&
-      matchesPaymentMethod &&
-      matchesCountry &&
-      matchesMinAmount &&
-      matchesMaxAmount &&
-      matchesDateFrom &&
-      matchesDateTo
-    );
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    let comparison = 0;
-
-    if (filters.sortBy === 'amount') {
-      comparison = a.amount - b.amount;
-    } else if (filters.sortBy === 'merchant') {
-      comparison = a.merchant.localeCompare(b.merchant);
-    } else {
-      comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    }
-
-    return filters.order === 'asc' ? comparison : -comparison;
-  });
-
-  return sorted;
-}
-
 type DecisionPayload = {
   status: OperationStatus;
   reason: string;
@@ -102,9 +39,35 @@ type DecisionPayload = {
 };
 
 type MutationContext = {
-  previousOperations?: Operation[];
+  previousOperationsLists: Array<[readonly unknown[], GetOperationsResponse | undefined]>;
   previousOperationDetails: Array<[string, OperationDetails | undefined]>;
 };
+
+function mapFiltersToQueryParams(filters: OperationsFilterValues): GetOperationsParams {
+  const minAmount = filters.minAmount.trim() ? Number(filters.minAmount) : undefined;
+  const maxAmount = filters.maxAmount.trim() ? Number(filters.maxAmount) : undefined;
+
+  return {
+    page: filters.page,
+    pageSize: filters.pageSize,
+    search: filters.search.trim() || undefined,
+    status: filters.status === 'all' ? undefined : filters.status,
+    riskLevel: filters.riskLevel === 'all' ? undefined : filters.riskLevel,
+    sortBy: filters.sortBy,
+    order: filters.order,
+    minAmount: minAmount !== undefined && !Number.isNaN(minAmount) ? minAmount : undefined,
+    maxAmount: maxAmount !== undefined && !Number.isNaN(maxAmount) ? maxAmount : undefined,
+    dateFrom: filters.dateFrom || undefined,
+    dateTo: filters.dateTo || undefined,
+    paymentMethod: filters.paymentMethod === 'all' ? undefined : filters.paymentMethod,
+    country: filters.country === 'all' ? undefined : filters.country,
+  };
+}
+
+function formatRefreshedAt(value?: string) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString();
+}
 
 export function OperationsListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -112,8 +75,6 @@ export function OperationsListPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingBulkStatus, setPendingBulkStatus] = useState<OperationStatus | null>(null);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const queryClient = useQueryClient();
   const pollingInterval = import.meta.env.MODE === 'test' ? false : 10000;
@@ -123,21 +84,17 @@ export function OperationsListPage() {
     [searchParams],
   );
 
-  const { data, isLoading, isError, error, isFetching } = useQuery({
-    queryKey: ['operations'],
-    queryFn: getOperations,
+  const queryParams = useMemo(() => mapFiltersToQueryParams(filters), [filters]);
+
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
+    queryKey: ['operations', queryParams],
+    queryFn: () => getOperations(queryParams),
     refetchInterval: pollingInterval,
+    placeholderData: (previousData) => previousData,
   });
 
-  const filteredOperations = useMemo(() => {
-    return applyFiltersAndSort(data ?? [], filters);
-  }, [data, filters]);
-
-  const paginatedOperations = useMemo(() => {
-    const start = page * rowsPerPage;
-    const end = start + rowsPerPage;
-    return filteredOperations.slice(start, end);
-  }, [filteredOperations, page, rowsPerPage]);
+  const operations = data?.items ?? [];
+  const totalOperations = data?.total ?? 0;
 
   const bulkMutation = useMutation({
     mutationFn: ({
@@ -162,18 +119,23 @@ export function OperationsListPage() {
 
       await queryClient.cancelQueries({ queryKey: ['operations'] });
 
-      const previousOperations = queryClient.getQueryData<Operation[]>(['operations']);
+      const previousOperationsLists = queryClient.getQueriesData<GetOperationsResponse>({
+        queryKey: ['operations'],
+      });
+
       const previousOperationDetails: Array<[string, OperationDetails | undefined]> = ids.map((id) => [
         id,
         queryClient.getQueryData<OperationDetails>(['operation', id]),
       ]);
 
-      if (previousOperations) {
-        queryClient.setQueryData<Operation[]>(
-          ['operations'],
-          applyOptimisticDecisionToOperationsList(previousOperations, ids, payload),
+      previousOperationsLists.forEach(([queryKey, response]) => {
+        if (!response) return;
+
+        queryClient.setQueryData<GetOperationsResponse>(
+          queryKey,
+          applyOptimisticDecisionToOperationsResponse(response, ids, payload),
         );
-      }
+      });
 
       previousOperationDetails.forEach(([operationId, operationDetails]) => {
         if (!operationDetails) return;
@@ -187,7 +149,7 @@ export function OperationsListPage() {
       setErrorMessage('');
 
       return {
-        previousOperations,
+        previousOperationsLists,
         previousOperationDetails,
       };
     },
@@ -200,9 +162,9 @@ export function OperationsListPage() {
     },
 
     onError: (mutationError, _variables, context) => {
-      if (context?.previousOperations) {
-        queryClient.setQueryData(['operations'], context.previousOperations);
-      }
+      context?.previousOperationsLists.forEach(([queryKey, response]) => {
+        queryClient.setQueryData(queryKey, response);
+      });
 
       context?.previousOperationDetails.forEach(([operationId, operationDetails]) => {
         if (operationDetails) {
@@ -229,13 +191,11 @@ export function OperationsListPage() {
   const handleFiltersChange = (nextFilters: OperationsFilterValues) => {
     setSearchParams(toOperationsSearchParams(nextFilters));
     setSelectedIds([]);
-    setPage(0);
   };
 
   const handleReset = () => {
     setSearchParams(toOperationsSearchParams(defaultOperationsFilters));
     setSelectedIds([]);
-    setPage(0);
   };
 
   const handleToggleOne = (id: string) => {
@@ -258,23 +218,27 @@ export function OperationsListPage() {
   };
 
   const handleChangePage = (_event: unknown, nextPage: number) => {
-    setPage(nextPage);
-    setSelectedIds([]);
+    handleFiltersChange({
+      ...filters,
+      page: nextPage + 1,
+    });
   };
 
   const handleChangeRowsPerPage = (event: ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(Number(event.target.value));
-    setPage(0);
-    setSelectedIds([]);
+    handleFiltersChange({
+      ...filters,
+      page: 1,
+      pageSize: Number(event.target.value),
+    });
   };
 
   const visibleSelectedIds = selectedIds.filter((id) =>
-    paginatedOperations.some((operation) => operation.id === id),
+    operations.some((operation) => operation.id === id),
   );
 
   const selectedOperationsLabel =
     visibleSelectedIds.length === 1
-      ? paginatedOperations.find((item) => item.id === visibleSelectedIds[0])?.merchant ?? 'operation'
+      ? operations.find((item) => item.id === visibleSelectedIds[0])?.merchant ?? 'operation'
       : `${visibleSelectedIds.length} operations`;
 
   return (
@@ -284,7 +248,7 @@ export function OperationsListPage() {
       </Typography>
 
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Очередь операций для анализа: поиск, фильтрация, сортировка и регулярное обновление данных.
+        Очередь операций для анализа: серверная фильтрация, сортировка, пагинация и регулярное обновление данных.
       </Typography>
 
       <OperationsFilters value={filters} onChange={handleFiltersChange} onReset={handleReset} />
@@ -299,30 +263,39 @@ export function OperationsListPage() {
       )}
 
       <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
-        <Chip label={`Found: ${filteredOperations.length}`} />
-        <Chip label={`Page: ${page + 1}`} />
+        <Chip label={`Found: ${totalOperations}`} />
+        <Chip label={`Page: ${filters.page}`} />
+        <Chip label={`Rows: ${filters.pageSize}`} />
         <Chip label={`Selected: ${visibleSelectedIds.length}`} />
         <Chip label={`Sort: ${filters.sortBy}`} />
         <Chip label={`Order: ${filters.order}`} />
+        <Chip label={`Refreshed: ${formatRefreshedAt(data?.refreshedAt)}`} />
         {isFetching && !isLoading ? <Chip label="Refreshing..." color="warning" /> : null}
       </Stack>
 
-      {isLoading && <OperationsTableSkeleton rows={rowsPerPage} />}
+      {isLoading && <OperationsTableSkeleton rows={filters.pageSize} />}
 
       {isError && (
-        <Alert severity="error">
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        >
           {error instanceof Error ? error.message : 'Unknown error'}
         </Alert>
       )}
 
-      {!isLoading && !isError && filteredOperations.length === 0 && (
+      {!isLoading && !isError && totalOperations === 0 && (
         <Alert severity="info">No operations found for current filters.</Alert>
       )}
 
-      {!isLoading && !isError && filteredOperations.length > 0 && (
+      {!isLoading && !isError && totalOperations > 0 && (
         <>
           <OperationsTable
-            operations={paginatedOperations}
+            operations={operations}
             selectedIds={visibleSelectedIds}
             onToggleOne={handleToggleOne}
             onToggleAll={handleToggleAll}
@@ -330,12 +303,12 @@ export function OperationsListPage() {
 
           <TablePagination
             component="div"
-            count={filteredOperations.length}
-            page={page}
+            count={totalOperations}
+            page={filters.page - 1}
             onPageChange={handleChangePage}
-            rowsPerPage={rowsPerPage}
+            rowsPerPage={filters.pageSize}
             onRowsPerPageChange={handleChangeRowsPerPage}
-            rowsPerPageOptions={[5, 10, 25]}
+            rowsPerPageOptions={[5, 10, 25, 50]}
           />
         </>
       )}

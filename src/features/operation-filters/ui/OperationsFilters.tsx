@@ -23,24 +23,11 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
     if (debouncedSearch !== value.search) {
       onChange({
         ...value,
+        page: 1,
         search: debouncedSearch,
       });
     }
-  }, [
-    debouncedSearch,
-    onChange,
-    value.country,
-    value.dateFrom,
-    value.dateTo,
-    value.maxAmount,
-    value.minAmount,
-    value.order,
-    value.paymentMethod,
-    value.riskLevel,
-    value.search,
-    value.sortBy,
-    value.status,
-  ]);
+  }, [debouncedSearch, onChange, value]);
 
   return (
     <Paper sx={{ p: 2, mb: 3 }}>
@@ -60,6 +47,7 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
             onChange={(event) =>
               onChange({
                 ...value,
+                page: 1,
                 status: event.target.value as OperationsFilterValues['status'],
               })
             }
@@ -80,106 +68,20 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
             onChange={(event) =>
               onChange({
                 ...value,
+                page: 1,
                 riskLevel: event.target.value as OperationsFilterValues['riskLevel'],
               })
             }
-            sx={{ minWidth: 180 }}
+            sx={{ minWidth: 160 }}
           >
             <MenuItem value="all">All</MenuItem>
             <MenuItem value="low">Low</MenuItem>
             <MenuItem value="medium">Medium</MenuItem>
             <MenuItem value="high">High</MenuItem>
           </TextField>
-
-          <TextField
-            select
-            label="Payment"
-            value={value.paymentMethod}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                paymentMethod: event.target.value as OperationsFilterValues['paymentMethod'],
-              })
-            }
-            sx={{ minWidth: 160 }}
-          >
-            <MenuItem value="all">All</MenuItem>
-            <MenuItem value="card">Card</MenuItem>
-            <MenuItem value="sbp">SBP</MenuItem>
-          </TextField>
-
-          <TextField
-            select
-            label="Country"
-            value={value.country}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                country: event.target.value as OperationsFilterValues['country'],
-              })
-            }
-            sx={{ minWidth: 140 }}
-          >
-            <MenuItem value="all">All</MenuItem>
-            <MenuItem value="RU">RU</MenuItem>
-          </TextField>
         </Stack>
 
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-          <TextField
-            label="Min amount"
-            type="number"
-            value={value.minAmount}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                minAmount: event.target.value,
-              })
-            }
-            sx={{ minWidth: 160 }}
-          />
-
-          <TextField
-            label="Max amount"
-            type="number"
-            value={value.maxAmount}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                maxAmount: event.target.value,
-              })
-            }
-            sx={{ minWidth: 160 }}
-          />
-
-          <TextField
-            label="Date from"
-            type="date"
-            value={value.dateFrom}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                dateFrom: event.target.value,
-              })
-            }
-            InputLabelProps={{ shrink: true }}
-            sx={{ minWidth: 170 }}
-          />
-
-          <TextField
-            label="Date to"
-            type="date"
-            value={value.dateTo}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                dateTo: event.target.value,
-              })
-            }
-            InputLabelProps={{ shrink: true }}
-            sx={{ minWidth: 170 }}
-          />
-
           <TextField
             select
             label="Sort by"
@@ -187,10 +89,11 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
             onChange={(event) =>
               onChange({
                 ...value,
+                page: 1,
                 sortBy: event.target.value as OperationsFilterValues['sortBy'],
               })
             }
-            sx={{ minWidth: 160 }}
+            sx={{ minWidth: 180 }}
           >
             <MenuItem value="createdAt">Created at</MenuItem>
             <MenuItem value="amount">Amount</MenuItem>
@@ -204,6 +107,7 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
             onChange={(event) =>
               onChange({
                 ...value,
+                page: 1,
                 order: event.target.value as OperationsFilterValues['order'],
               })
             }
@@ -213,8 +117,105 @@ export function OperationsFilters({ value, onChange, onReset }: OperationsFilter
             <MenuItem value="asc">Asc</MenuItem>
           </TextField>
 
-          <Button variant="outlined" onClick={onReset}>
-            Reset
+          <TextField
+            select
+            label="Payment method"
+            value={value.paymentMethod}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                page: 1,
+                paymentMethod: event.target.value as OperationsFilterValues['paymentMethod'],
+              })
+            }
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="card">Card</MenuItem>
+            <MenuItem value="sbp">SBP</MenuItem>
+          </TextField>
+
+          <TextField
+            select
+            label="Country"
+            value={value.country}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                page: 1,
+                country: event.target.value as OperationsFilterValues['country'],
+              })
+            }
+            sx={{ minWidth: 140 }}
+          >
+            <MenuItem value="all">All</MenuItem>
+            <MenuItem value="RU">RU</MenuItem>
+          </TextField>
+        </Stack>
+
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <TextField
+            label="Min amount"
+            value={value.minAmount}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                page: 1,
+                minAmount: event.target.value,
+              })
+            }
+            type="number"
+            fullWidth
+          />
+
+          <TextField
+            label="Max amount"
+            value={value.maxAmount}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                page: 1,
+                maxAmount: event.target.value,
+              })
+            }
+            type="number"
+            fullWidth
+          />
+
+          <TextField
+            label="Date from"
+            value={value.dateFrom}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                page: 1,
+                dateFrom: event.target.value,
+              })
+            }
+            type="date"
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+
+          <TextField
+            label="Date to"
+            value={value.dateTo}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                page: 1,
+                dateTo: event.target.value,
+              })
+            }
+            type="date"
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+        </Stack>
+
+        <Stack direction="row" justifyContent="flex-end">
+          <Button variant="text" onClick={onReset}>
+            Reset filters
           </Button>
         </Stack>
       </Stack>

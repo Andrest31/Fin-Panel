@@ -21,13 +21,13 @@ import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
   getOperationById,
   updateOperationStatus,
-  type Operation,
+  type GetOperationsResponse,
   type OperationDetails,
   type OperationStatus,
 } from '@/entities/operation/api/getOperations';
 import {
-  applyOptimisticDecisionToOperation,
   applyOptimisticDecisionToOperationDetails,
+  applyOptimisticDecisionToOperationsResponse,
 } from '@/entities/operation/lib/optimisticUpdates';
 import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
 
@@ -52,7 +52,7 @@ type DecisionPayload = {
 
 type MutationContext = {
   previousOperation?: OperationDetails;
-  previousOperations?: Operation[];
+  previousOperationsLists: Array<[readonly unknown[], GetOperationsResponse | undefined]>;
 };
 
 export function OperationDetailsPage() {
@@ -77,7 +77,9 @@ export function OperationDetailsPage() {
       await queryClient.cancelQueries({ queryKey: ['operations'] });
 
       const previousOperation = queryClient.getQueryData<OperationDetails>(['operation', id]);
-      const previousOperations = queryClient.getQueryData<Operation[]>(['operations']);
+      const previousOperationsLists = queryClient.getQueriesData<GetOperationsResponse>({
+        queryKey: ['operations'],
+      });
 
       if (previousOperation) {
         queryClient.setQueryData<OperationDetails>(
@@ -86,22 +88,20 @@ export function OperationDetailsPage() {
         );
       }
 
-      if (previousOperations) {
-        queryClient.setQueryData<Operation[]>(
-          ['operations'],
-          previousOperations.map((operation) =>
-            operation.id === id
-              ? applyOptimisticDecisionToOperation(operation, payload)
-              : operation,
-          ),
+      previousOperationsLists.forEach(([queryKey, response]) => {
+        if (!response) return;
+
+        queryClient.setQueryData<GetOperationsResponse>(
+          queryKey,
+          applyOptimisticDecisionToOperationsResponse(response, [id], payload),
         );
-      }
+      });
 
       setErrorMessage('');
 
       return {
         previousOperation,
-        previousOperations,
+        previousOperationsLists,
       };
     },
 
@@ -116,9 +116,9 @@ export function OperationDetailsPage() {
         queryClient.setQueryData(['operation', id], context.previousOperation);
       }
 
-      if (context?.previousOperations) {
-        queryClient.setQueryData(['operations'], context.previousOperations);
-      }
+      context?.previousOperationsLists.forEach(([queryKey, response]) => {
+        queryClient.setQueryData(queryKey, response);
+      });
 
       setErrorMessage(
         mutationError instanceof Error ? mutationError.message : 'Не удалось обновить статус',

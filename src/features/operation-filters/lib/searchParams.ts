@@ -16,14 +16,31 @@ const allowedSortBy: OperationsSortBy[] = ['createdAt', 'amount', 'merchant'];
 const allowedOrder: SortOrder[] = ['asc', 'desc'];
 const allowedPaymentMethods: PaymentMethodFilter[] = ['all', 'card', 'sbp'];
 const allowedCountries: CountryFilter[] = ['all', 'RU'];
+const allowedPageSizes = [5, 10, 25, 50];
 
 function isAllowedValue<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
   if (!value) return fallback;
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
+function parsePositiveInteger(value: string | null, fallback: number): number {
+  if (!value) return fallback;
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
 export function getOperationsFiltersFromSearchParams(searchParams: URLSearchParams): OperationsFilterValues {
+  const pageSizeFromUrl = parsePositiveInteger(searchParams.get('pageSize'), defaultOperationsFilters.pageSize);
+
   return {
+    page: parsePositiveInteger(searchParams.get('page'), defaultOperationsFilters.page),
+    pageSize: allowedPageSizes.includes(pageSizeFromUrl) ? pageSizeFromUrl : defaultOperationsFilters.pageSize,
     search: searchParams.get('search') ?? defaultOperationsFilters.search,
     status: isAllowedValue(searchParams.get('status'), allowedStatuses, defaultOperationsFilters.status),
     riskLevel: isAllowedValue(searchParams.get('riskLevel'), allowedRiskLevels, defaultOperationsFilters.riskLevel),
@@ -44,6 +61,11 @@ export function getOperationsFiltersFromSearchParams(searchParams: URLSearchPara
 
 export function toOperationsSearchParams(filters: OperationsFilterValues): URLSearchParamsInit {
   const params: Record<string, string> = {};
+
+  if (filters.page !== defaultOperationsFilters.page) params.page = String(filters.page);
+  if (filters.pageSize !== defaultOperationsFilters.pageSize) {
+    params.pageSize = String(filters.pageSize);
+  }
 
   if (filters.search) params.search = filters.search;
   if (filters.status !== defaultOperationsFilters.status) params.status = filters.status;

@@ -42,7 +42,33 @@ export const operationDetailsSchema = operationListItemSchema.extend({
   history: z.array(operationHistoryEventSchema),
 });
 
-export const operationsResponseSchema = z.array(operationListItemSchema);
+export const operationsSortBySchema = z.enum(['createdAt', 'amount', 'merchant']);
+export const sortOrderSchema = z.enum(['asc', 'desc']);
+export const paymentMethodSchema = z.enum(['card', 'sbp']);
+
+export const getOperationsParamsSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(10),
+  search: z.string().trim().optional(),
+  status: operationStatusSchema.optional(),
+  riskLevel: operationRiskLevelSchema.optional(),
+  sortBy: operationsSortBySchema.default('createdAt'),
+  order: sortOrderSchema.default('desc'),
+  minAmount: z.number().finite().optional(),
+  maxAmount: z.number().finite().optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  paymentMethod: paymentMethodSchema.optional(),
+  country: z.string().trim().optional(),
+});
+
+export const operationsResponseSchema = z.object({
+  items: z.array(operationListItemSchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1),
+  refreshedAt: z.string(),
+});
 
 export const updateOperationStatusBodySchema = z.object({
   status: operationStatusSchema,
@@ -66,6 +92,11 @@ export type Operation = z.infer<typeof operationListItemSchema>;
 export type OperationDetails = z.infer<typeof operationDetailsSchema>;
 export type OperationHistoryEvent = z.infer<typeof operationHistoryEventSchema>;
 export type OperationStatus = z.infer<typeof operationStatusSchema>;
+export type OperationRiskLevel = z.infer<typeof operationRiskLevelSchema>;
+export type OperationsSortBy = z.infer<typeof operationsSortBySchema>;
+export type SortOrder = z.infer<typeof sortOrderSchema>;
+export type GetOperationsParams = z.infer<typeof getOperationsParamsSchema>;
+export type GetOperationsResponse = z.infer<typeof operationsResponseSchema>;
 export type BulkUpdateOperationStatusResponse = z.infer<
   typeof bulkUpdateOperationStatusResponseSchema
 >;
@@ -102,8 +133,32 @@ async function parseJsonResponse<T>(response: Response, schema: z.ZodSchema<T>):
   return schema.parse(json);
 }
 
-export async function getOperations(): Promise<Operation[]> {
-  const response = await fetch('/api/operations');
+function createOperationsSearchParams(params: GetOperationsParams): URLSearchParams {
+  const parsedParams = getOperationsParamsSchema.parse(params);
+  const searchParams = new URLSearchParams();
+
+  searchParams.set('page', String(parsedParams.page));
+  searchParams.set('pageSize', String(parsedParams.pageSize));
+  searchParams.set('sortBy', parsedParams.sortBy);
+  searchParams.set('order', parsedParams.order);
+
+  if (parsedParams.search) searchParams.set('search', parsedParams.search);
+  if (parsedParams.status) searchParams.set('status', parsedParams.status);
+  if (parsedParams.riskLevel) searchParams.set('riskLevel', parsedParams.riskLevel);
+  if (parsedParams.minAmount !== undefined) searchParams.set('minAmount', String(parsedParams.minAmount));
+  if (parsedParams.maxAmount !== undefined) searchParams.set('maxAmount', String(parsedParams.maxAmount));
+  if (parsedParams.dateFrom) searchParams.set('dateFrom', parsedParams.dateFrom);
+  if (parsedParams.dateTo) searchParams.set('dateTo', parsedParams.dateTo);
+  if (parsedParams.paymentMethod) searchParams.set('paymentMethod', parsedParams.paymentMethod);
+  if (parsedParams.country) searchParams.set('country', parsedParams.country);
+
+  return searchParams;
+}
+
+export async function getOperations(params: GetOperationsParams): Promise<GetOperationsResponse> {
+  const searchParams = createOperationsSearchParams(params);
+  const response = await fetch(`/api/operations?${searchParams.toString()}`);
+
   return parseJsonResponse(response, operationsResponseSchema);
 }
 

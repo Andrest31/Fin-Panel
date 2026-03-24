@@ -6,6 +6,8 @@ export type PaymentMethodFilter = 'all' | 'card' | 'sbp';
 export type CountryFilter = 'all' | 'RU';
 
 export type OperationsFilterValues = {
+  page: number;
+  pageSize: number;
   search: string;
   status: OperationStatus;
   riskLevel: OperationRiskLevel;
@@ -20,6 +22,8 @@ export type OperationsFilterValues = {
 };
 
 export const defaultOperationsFilters: OperationsFilterValues = {
+  page: 1,
+  pageSize: 10,
   search: '',
   status: 'all',
   riskLevel: 'all',

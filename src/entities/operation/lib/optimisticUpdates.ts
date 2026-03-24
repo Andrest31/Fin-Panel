@@ -1,4 +1,5 @@
 import type {
+  GetOperationsResponse,
   Operation,
   OperationDetails,
   OperationHistoryEvent,
@@ -76,4 +77,15 @@ export function applyOptimisticDecisionToOperationsList(
       ? applyOptimisticDecisionToOperation(operation, payload)
       : operation,
   );
+}
+
+export function applyOptimisticDecisionToOperationsResponse(
+  response: GetOperationsResponse,
+  ids: string[],
+  payload: DecisionPayload,
+): GetOperationsResponse {
+  return {
+    ...response,
+    items: applyOptimisticDecisionToOperationsList(response.items, ids, payload),
+  };
 }
