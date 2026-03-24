@@ -1,0 +1,5 @@
+services:
+  fin-panel:
+    build: .
+    ports:
+      - '4173:80'
