@@ -12,7 +12,7 @@ import {
 import { Link as RouterLink, Outlet, useLocation } from 'react-router-dom';
 import { MockScenarioSwitcher } from '@/features/mock-scenarios/ui/MockScenarioSwitcher';
 
-const drawerWidth = 240;
+const drawerWidth = 280;
 
 const navItems = [
   { label: 'Dashboard', to: '/dashboard' },
@@ -87,7 +87,7 @@ export function AppShell() {
         </Box>
       </Drawer>
 
-      <Box component="main" sx={{ flexGrow: 1, ml: `${drawerWidth}px` }}>
+      <Box component="main" sx={{ flexGrow: 1, ml: `${drawerWidth}px`, minWidth: 0 }}>
         <Toolbar />
         <Outlet />
       </Box>

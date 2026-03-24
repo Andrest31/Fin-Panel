@@ -1,12 +1,16 @@
 import { MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import {
+  getMockDataVolume,
+  getMockDataVolumeLabel,
   getMockScenario,
+  setMockDataVolume,
   setMockScenario,
+  type MockDataVolume,
   type MockScenario,
 } from '@/shared/lib/mockScenario';
 
-const options: Array<{ value: MockScenario; label: string }> = [
+const scenarioOptions: Array<{ value: MockScenario; label: string }> = [
   { value: 'normal', label: 'Normal' },
   { value: 'slow', label: 'Slow response' },
   { value: 'flaky', label: 'Flaky random errors' },
@@ -15,17 +19,27 @@ const options: Array<{ value: MockScenario; label: string }> = [
   { value: 'conflict', label: '409 conflict' },
 ];
 
+const volumeOptions: MockDataVolume[] = ['small', 'medium', 'large', 'xlarge'];
+
 export function MockScenarioSwitcher() {
-  const [scenario, setScenario] = useState<MockScenario>('normal');
+  const [scenario, setScenarioState] = useState<MockScenario>('normal');
+  const [volume, setVolumeState] = useState<MockDataVolume>('medium');
 
   useEffect(() => {
-    setScenario(getMockScenario());
+    setScenarioState(getMockScenario());
+    setVolumeState(getMockDataVolume());
   }, []);
 
-  const handleChange = (value: MockScenario) => {
-    setScenario(value);
+  const handleScenarioChange = (value: MockScenario) => {
+    setScenarioState(value);
     setMockScenario(value);
     window.dispatchEvent(new CustomEvent('mock-scenario-changed', { detail: value }));
+  };
+
+  const handleVolumeChange = (value: MockDataVolume) => {
+    setVolumeState(value);
+    setMockDataVolume(value);
+    window.dispatchEvent(new CustomEvent('mock-volume-changed', { detail: value }));
   };
 
   if (import.meta.env.PROD) {
@@ -36,7 +50,7 @@ export function MockScenarioSwitcher() {
     <Paper variant="outlined" sx={{ p: 2 }}>
       <Stack spacing={1.5}>
         <Typography variant="body2" color="text.secondary">
-          Mock API scenario
+          Mock controls
         </Typography>
 
         <TextField
@@ -44,12 +58,27 @@ export function MockScenarioSwitcher() {
           size="small"
           label="Scenario"
           value={scenario}
-          onChange={(event) => handleChange(event.target.value as MockScenario)}
+          onChange={(event) => handleScenarioChange(event.target.value as MockScenario)}
           fullWidth
         >
-          {options.map((option) => (
+          {scenarioOptions.map((option) => (
             <MenuItem key={option.value} value={option.value}>
               {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          size="small"
+          label="Data volume"
+          value={volume}
+          onChange={(event) => handleVolumeChange(event.target.value as MockDataVolume)}
+          fullWidth
+        >
+          {volumeOptions.map((option) => (
+            <MenuItem key={option} value={option}>
+              {getMockDataVolumeLabel(option)}
             </MenuItem>
           ))}
         </TextField>

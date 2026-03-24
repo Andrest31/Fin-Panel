@@ -1,32 +1,39 @@
 import {
+  Box,
   Checkbox,
+  Chip,
+  Link,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
+  Stack,
   Typography,
 } from '@mui/material';
+import { useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import type { Operation } from '@/entities/operation/api/getOperations';
-import { RiskLevelChip } from '@/entities/operation/ui/RiskLevelChip';
-import { StatusChip } from '@/entities/operation/ui/StatusChip';
 
 type OperationsTableProps = {
   operations: Operation[];
   selectedIds: string[];
   onToggleOne: (id: string) => void;
-  onToggleAll: (ids: string[]) => void;
+  onToggleAll: (idsOnPage: string[]) => void;
+  highlightedIds?: string[];
 };
 
-function formatAmount(amount: number, currency: string) {
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amount);
+const ROW_HEIGHT = 68;
+const OVERSCAN = 8;
+const VIEWPORT_HEIGHT = 560;
+
+function getRiskChipColor(riskLevel: Operation['riskLevel']) {
+  if (riskLevel === 'high') return 'error';
+  if (riskLevel === 'medium') return 'warning';
+  return 'success';
+}
+
+function getStatusChipColor(status: Operation['status']) {
+  if (status === 'approved') return 'success';
+  if (status === 'blocked' || status === 'flagged') return 'error';
+  if (status === 'in_review') return 'warning';
+  return 'default';
 }
 
 export function OperationsTable({
@@ -34,107 +41,158 @@ export function OperationsTable({
   selectedIds,
   onToggleOne,
   onToggleAll,
+  highlightedIds = [],
 }: OperationsTableProps) {
-  const allIds = operations.map((operation) => operation.id);
-  const selectedSet = new Set(selectedIds);
+  const [scrollTop, setScrollTop] = useState(0);
 
-  const selectedOnPageCount = allIds.filter((id) => selectedSet.has(id)).length;
-  const allSelected = operations.length > 0 && selectedOnPageCount === operations.length;
-  const indeterminate =
-    selectedOnPageCount > 0 && selectedOnPageCount < operations.length;
+  const highlightedSet = useMemo(() => new Set(highlightedIds), [highlightedIds]);
 
-  const handleToggleAll = () => {
-    onToggleAll(allIds);
-  };
+  const allSelected =
+    operations.length > 0 && operations.every((operation) => selectedIds.includes(operation.id));
+
+  const visibleRange = useMemo(() => {
+    const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+    const endIndex = Math.min(
+      operations.length,
+      Math.ceil((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + OVERSCAN,
+    );
+
+    return { startIndex, endIndex };
+  }, [operations.length, scrollTop]);
+
+  const visibleRows = operations.slice(visibleRange.startIndex, visibleRange.endIndex);
+  const totalHeight = operations.length * ROW_HEIGHT;
 
   return (
-    <TableContainer
-      component={Paper}
-      variant="outlined"
-      sx={{
-        maxHeight: 620,
-      }}
-    >
-      <Table stickyHeader>
-        <TableHead>
-          <TableRow>
-            <TableCell padding="checkbox">
-              <Checkbox
-                checked={allSelected}
-                indeterminate={indeterminate}
-                onChange={handleToggleAll}
-              />
-            </TableCell>
-            <TableCell>Merchant</TableCell>
-            <TableCell>Amount</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Risk</TableCell>
-            <TableCell>Location</TableCell>
-            <TableCell>Payment</TableCell>
-            <TableCell>Updated</TableCell>
-          </TableRow>
-        </TableHead>
+    <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: '52px 1.6fr 1fr 1fr 1fr 1fr 1.1fr',
+          alignItems: 'center',
+          gap: 2,
+          px: 2,
+          py: 1.5,
+          borderBottom: 1,
+          borderColor: 'divider',
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Checkbox
+          size="small"
+          checked={allSelected}
+          indeterminate={selectedIds.length > 0 && !allSelected}
+          onChange={() => onToggleAll(operations.map((operation) => operation.id))}
+        />
+        <Typography variant="subtitle2">Merchant</Typography>
+        <Typography variant="subtitle2">Amount</Typography>
+        <Typography variant="subtitle2">Status</Typography>
+        <Typography variant="subtitle2">Risk</Typography>
+        <Typography variant="subtitle2">Customer</Typography>
+        <Typography variant="subtitle2">Updated</Typography>
+      </Box>
 
-        <TableBody>
-          {operations.map((operation) => {
-            const isSelected = selectedSet.has(operation.id);
+      <Box
+        sx={{
+          height: VIEWPORT_HEIGHT,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        <Box sx={{ position: 'relative', height: totalHeight }}>
+          {visibleRows.map((operation, index) => {
+            const absoluteIndex = visibleRange.startIndex + index;
+            const top = absoluteIndex * ROW_HEIGHT;
+            const isSelected = selectedIds.includes(operation.id);
+            const isHighlighted = highlightedSet.has(operation.id);
 
             return (
-              <TableRow
+              <Box
                 key={operation.id}
-                hover
-                selected={isSelected}
                 sx={{
-                  '&:last-child td, &:last-child th': { border: 0 },
+                  position: 'absolute',
+                  top,
+                  left: 0,
+                  right: 0,
+                  height: ROW_HEIGHT,
+                  display: 'grid',
+                  gridTemplateColumns: '52px 1.6fr 1fr 1fr 1fr 1fr 1.1fr',
+                  alignItems: 'center',
+                  gap: 2,
+                  px: 2,
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                  bgcolor: isHighlighted
+                    ? 'rgba(255, 193, 7, 0.12)'
+                    : isSelected
+                      ? 'action.selected'
+                      : 'background.paper',
+                  transition: 'background-color 300ms ease',
                 }}
               >
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    checked={isSelected}
-                    onChange={() => onToggleOne(operation.id)}
-                  />
-                </TableCell>
+                <Checkbox
+                  size="small"
+                  checked={isSelected}
+                  onChange={() => onToggleOne(operation.id)}
+                />
 
-                <TableCell>
-                  <Typography
+                <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                  <Link
                     component={RouterLink}
                     to={`/operations/${operation.id}`}
+                    underline="hover"
+                    color="inherit"
                     sx={{
-                      color: 'inherit',
-                      textDecoration: 'none',
-                      fontWeight: 500,
-                      '&:hover': { textDecoration: 'underline' },
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
                     }}
                   >
                     {operation.merchant}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  </Link>
+
+                  <Typography variant="caption" color="text.secondary" noWrap>
                     {operation.id}
                   </Typography>
-                </TableCell>
+                </Stack>
 
-                <TableCell>{formatAmount(operation.amount, operation.currency)}</TableCell>
+                <Typography variant="body2">
+                  {operation.amount} {operation.currency}
+                </Typography>
 
-                <TableCell>
-                  <StatusChip status={operation.status} />
-                </TableCell>
+                <Chip
+                  size="small"
+                  label={operation.status}
+                  color={getStatusChipColor(operation.status)}
+                />
 
-                <TableCell>
-                  <RiskLevelChip riskLevel={operation.riskLevel} />
-                </TableCell>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip
+                    size="small"
+                    label={operation.riskLevel}
+                    color={getRiskChipColor(operation.riskLevel)}
+                  />
+                  <Chip size="small" variant="outlined" label={operation.riskScore} />
+                  {isHighlighted ? <Chip size="small" color="warning" label="new" /> : null}
+                </Stack>
 
-                <TableCell>
-                  {operation.country} / {operation.city}
-                </TableCell>
+                <Typography variant="body2" noWrap>
+                  {operation.customerId}
+                </Typography>
 
-                <TableCell>{operation.paymentMethod}</TableCell>
-
-                <TableCell>{new Date(operation.updatedAt).toLocaleString()}</TableCell>
-              </TableRow>
+                <Typography variant="body2" color="text.secondary" noWrap>
+                  {new Date(operation.updatedAt).toLocaleString()}
+                </Typography>
+              </Box>
             );
           })}
-        </TableBody>
-      </Table>
-    </TableContainer>
+        </Box>
+      </Box>
+    </Paper>
   );
 }

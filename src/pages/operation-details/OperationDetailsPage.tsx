@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
   ApiError,
@@ -87,16 +87,69 @@ export function OperationDetailsPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingStatus, setPendingStatus] = useState<OperationStatus | null>(null);
+  const [liveMessage, setLiveMessage] = useState('');
+  const [highlightedHistoryEventIds, setHighlightedHistoryEventIds] = useState<string[]>([]);
+
+  const previousUpdatedAtRef = useRef<string | null>(null);
+  const previousHistoryIdsRef = useRef<string[]>([]);
+  const isFirstLivePassRef = useRef(true);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['operation', id],
     queryFn: () => getOperationById(id),
     enabled: Boolean(id),
+    refetchInterval: import.meta.env.MODE === 'test' ? false : 7000,
+    refetchIntervalInBackground: true,
   });
+
+  useEffect(() => {
+    if (!data) return;
+
+    if (isFirstLivePassRef.current) {
+      previousUpdatedAtRef.current = data.updatedAt;
+      previousHistoryIdsRef.current = data.history.map((event) => event.id);
+      isFirstLivePassRef.current = false;
+      return;
+    }
+
+    const previousUpdatedAt = previousUpdatedAtRef.current;
+    const previousHistoryIds = previousHistoryIdsRef.current;
+
+    const freshHistoryIds = data.history
+      .map((event) => event.id)
+      .filter((id) => !previousHistoryIds.includes(id));
+
+    if (previousUpdatedAt && previousUpdatedAt !== data.updatedAt) {
+      setLiveMessage('Карточка операции обновилась в реальном времени.');
+    }
+
+    if (freshHistoryIds.length > 0) {
+      setHighlightedHistoryEventIds(freshHistoryIds);
+
+      const timeoutId = window.setTimeout(() => {
+        setHighlightedHistoryEventIds((current) =>
+          current.filter((eventId) => !freshHistoryIds.includes(eventId)),
+        );
+      }, 6000);
+
+      previousUpdatedAtRef.current = data.updatedAt;
+      previousHistoryIdsRef.current = data.history.map((event) => event.id);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    previousUpdatedAtRef.current = data.updatedAt;
+    previousHistoryIdsRef.current = data.history.map((event) => event.id);
+  }, [data]);
 
   const highImpactFactors = useMemo(
     () => (data?.riskFactors ?? []).filter((factor) => factor.contribution >= 20),
     [data?.riskFactors],
+  );
+
+  const highlightedHistoryEventIdSet = useMemo(
+    () => new Set(highlightedHistoryEventIds),
+    [highlightedHistoryEventIds],
   );
 
   const statusMutation = useMutation({
@@ -199,9 +252,23 @@ export function OperationDetailsPage() {
 
         <Typography variant="h4">Case Review</Typography>
         <Typography variant="body2" color="text.secondary">
-          Экран расследования операции: explainable risk scoring, decision workflow и audit trail.
+          Экран расследования операции: explainable risk scoring, decision workflow, audit trail и live-обновления карточки.
         </Typography>
       </Stack>
+
+      {liveMessage ? (
+        <Alert
+          severity="info"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => setLiveMessage('')}>
+              Hide
+            </Button>
+          }
+        >
+          {liveMessage}
+        </Alert>
+      ) : null}
 
       {isLoading && <CircularProgress />}
 
@@ -240,6 +307,7 @@ export function OperationDetailsPage() {
                     <Chip label={data.status} color={getStatusColor(data.status)} />
                     <Chip label={`risk: ${data.riskLevel}`} color={getRiskColor(data.riskLevel)} />
                     <Chip label={`score: ${data.riskScore}/100`} />
+                    <Chip color="success" label="live" />
                   </Stack>
                 </Stack>
 
@@ -301,10 +369,10 @@ export function OperationDetailsPage() {
 
                   <Grid size={{ xs: 12, md: 6 }}>
                     <Typography variant="body2" color="text.secondary">
-                      Created at
+                      Updated at
                     </Typography>
                     <Typography variant="body1">
-                      {new Date(data.createdAt).toLocaleString()}
+                      {new Date(data.updatedAt).toLocaleString()}
                     </Typography>
                   </Grid>
 
@@ -392,48 +460,59 @@ export function OperationDetailsPage() {
                 </Typography>
 
                 <List>
-                  {data.history.map((event, index) => (
-                    <ListItem
-                      key={event.id}
-                      divider={index < data.history.length - 1}
-                      disableGutters
-                      alignItems="flex-start"
-                    >
-                      <ListItemText
-                        primary={
-                          <Stack
-                            direction={{ xs: 'column', md: 'row' }}
-                            spacing={1}
-                            alignItems={{ xs: 'flex-start', md: 'center' }}
-                          >
-                            <Typography variant="subtitle2">{event.type}</Typography>
-                            <Chip size="small" label={event.actor} />
-                            {event.reason ? <Chip size="small" variant="outlined" label={event.reason} /> : null}
-                          </Stack>
-                        }
-                        secondary={
-                          <Stack spacing={1} sx={{ mt: 1 }}>
-                            <Typography variant="body2">
-                              {new Date(event.timestamp).toLocaleString()} — {event.comment}
-                            </Typography>
+                  {data.history.map((event, index) => {
+                    const isHighlighted = highlightedHistoryEventIdSet.has(event.id);
 
-                            {event.changes.length > 0 ? (
-                              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                                {event.changes.map((change) => (
-                                  <Chip
-                                    key={`${event.id}_${change.field}`}
-                                    size="small"
-                                    variant="outlined"
-                                    label={`${change.field}: ${change.before ?? '—'} → ${change.after ?? '—'}`}
-                                  />
-                                ))}
-                              </Stack>
-                            ) : null}
-                          </Stack>
-                        }
-                      />
-                    </ListItem>
-                  ))}
+                    return (
+                      <ListItem
+                        key={event.id}
+                        divider={index < data.history.length - 1}
+                        disableGutters
+                        alignItems="flex-start"
+                        sx={{
+                          px: 1,
+                          borderRadius: 1,
+                          bgcolor: isHighlighted ? 'rgba(255, 193, 7, 0.12)' : 'transparent',
+                          transition: 'background-color 300ms ease',
+                        }}
+                      >
+                        <ListItemText
+                          primary={
+                            <Stack
+                              direction={{ xs: 'column', md: 'row' }}
+                              spacing={1}
+                              alignItems={{ xs: 'flex-start', md: 'center' }}
+                            >
+                              <Typography variant="subtitle2">{event.type}</Typography>
+                              <Chip size="small" label={event.actor} />
+                              {event.reason ? <Chip size="small" variant="outlined" label={event.reason} /> : null}
+                              {isHighlighted ? <Chip size="small" color="warning" label="live" /> : null}
+                            </Stack>
+                          }
+                          secondary={
+                            <Stack spacing={1} sx={{ mt: 1 }}>
+                              <Typography variant="body2">
+                                {new Date(event.timestamp).toLocaleString()} — {event.comment}
+                              </Typography>
+
+                              {event.changes.length > 0 ? (
+                                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                                  {event.changes.map((change) => (
+                                    <Chip
+                                      key={`${event.id}_${change.field}`}
+                                      size="small"
+                                      variant="outlined"
+                                      label={`${change.field}: ${change.before ?? '—'} → ${change.after ?? '—'}`}
+                                    />
+                                  ))}
+                                </Stack>
+                              ) : null}
+                            </Stack>
+                          }
+                        />
+                      </ListItem>
+                    );
+                  })}
                 </List>
               </CardContent>
             </Card>
@@ -516,7 +595,7 @@ export function OperationDetailsPage() {
                 </Typography>
 
                 <List>
-                  {data.relatedOperations.map((operation, index) => (
+                  {data.relatedOperations.map((operation) => (
                     <ListItem
                       key={operation.id}
                       component={RouterLink}
@@ -542,7 +621,6 @@ export function OperationDetailsPage() {
                         }
                         secondary={`${operation.amount} ${operation.currency} • ${new Date(operation.createdAt).toLocaleString()}`}
                       />
-                      {index < data.relatedOperations.length - 1 ? null : null}
                     </ListItem>
                   ))}
 

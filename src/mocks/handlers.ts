@@ -8,6 +8,8 @@ type MockScenario =
   | 'server_error'
   | 'conflict';
 
+type MockDataVolume = 'small' | 'medium' | 'large' | 'xlarge';
+
 type OperationStatus = 'new' | 'in_review' | 'approved' | 'blocked' | 'flagged';
 type OperationRiskLevel = 'low' | 'medium' | 'high';
 type OperationsSortBy = 'createdAt' | 'amount' | 'merchant';
@@ -76,7 +78,21 @@ type StatusUpdateRequest = {
   comment?: string;
 };
 
-const operations: OperationRecord[] = [
+type StoreState = {
+  operations: OperationRecord[];
+  lastMutationAt: number;
+  lastDetailMutationAtById: Record<string, number>;
+  nextRealtimeId: number;
+};
+
+const volumeCounts: Record<MockDataVolume, number> = {
+  small: 25,
+  medium: 250,
+  large: 2500,
+  xlarge: 10000,
+};
+
+const baseOperations: OperationRecord[] = [
   {
     id: 'op_001',
     merchant: 'TechMarket',
@@ -572,6 +588,8 @@ const operations: OperationRecord[] = [
   },
 ];
 
+const stores: Partial<Record<MockDataVolume, StoreState>> = {};
+
 function getScenario(request: Request): MockScenario {
   const scenario = request.headers.get('x-mock-scenario');
 
@@ -587,6 +605,16 @@ function getScenario(request: Request): MockScenario {
   }
 
   return 'normal';
+}
+
+function getVolume(request: Request): MockDataVolume {
+  const volume = request.headers.get('x-mock-volume');
+
+  if (volume === 'small' || volume === 'medium' || volume === 'large' || volume === 'xlarge') {
+    return volume;
+  }
+
+  return 'medium';
 }
 
 async function maybeApplyScenario(request: Request) {
@@ -609,6 +637,75 @@ async function maybeApplyScenario(request: Request) {
   }
 
   return null;
+}
+
+function cloneOperation(source: OperationRecord, index: number): OperationRecord {
+  const createdAt = new Date(Date.now() - index * 90_000);
+  const updatedAt = new Date(createdAt.getTime() + 60_000);
+
+  const scoreDelta = (index % 7) - 3;
+  const riskScore = Math.max(1, Math.min(99, source.riskScore + scoreDelta));
+
+  const riskLevel: OperationRiskLevel =
+    riskScore >= 75 ? 'high' : riskScore >= 35 ? 'medium' : 'low';
+
+  const statusCycle: OperationStatus[] = ['new', 'in_review', 'approved', 'blocked', 'flagged'];
+  const status = statusCycle[index % statusCycle.length];
+
+  return {
+    ...structuredClone(source),
+    id: `${source.id}_${index + 1}`,
+    merchant: index < 12 ? source.merchant : `${source.merchant} ${index + 1}`,
+    amount: Math.max(100, source.amount + (index % 11) * 170),
+    status,
+    riskLevel,
+    riskScore,
+    createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
+    customerId: `${source.customerId}_${index % 8}`,
+    deviceId: `${source.deviceId}_${index % 6}`,
+    ipAddress: `10.${(index % 200) + 1}.${(index % 50) + 10}.${(index % 230) + 20}`,
+    reviewer: status === 'new' || status === 'flagged' ? null : `analyst_0${(index % 4) + 1}`,
+    history: source.history.map((event, eventIndex) => ({
+      ...structuredClone(event),
+      id: `${event.id}_${index + 1}_${eventIndex + 1}`,
+      timestamp: new Date(createdAt.getTime() + eventIndex * 45_000).toISOString(),
+    })),
+  };
+}
+
+function buildDataset(volume: MockDataVolume): OperationRecord[] {
+  const count = volumeCounts[volume];
+  const result: OperationRecord[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const source = baseOperations[index % baseOperations.length];
+    result.push(cloneOperation(source, index));
+  }
+
+  return result.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+}
+
+function getStore(volume: MockDataVolume): StoreState {
+  const existing = stores[volume];
+
+  if (existing) {
+    return existing;
+  }
+
+  const operations = buildDataset(volume);
+
+  const store: StoreState = {
+    operations,
+    lastMutationAt: Date.now(),
+    lastDetailMutationAtById: {},
+    nextRealtimeId: operations.length + 1000,
+  };
+
+  stores[volume] = store;
+  return store;
 }
 
 function toListItem(operation: OperationRecord) {
@@ -674,6 +771,7 @@ function applyStatusChange(
   nextStatus: OperationStatus,
   reason?: string,
   comment?: string,
+  actor = 'analyst_99',
 ) {
   const now = new Date().toISOString();
   const actionMeta = getActionMeta(nextStatus);
@@ -682,7 +780,7 @@ function applyStatusChange(
     id: `evt_${Date.now()}_${operation.id}`,
     type: actionMeta.eventType,
     timestamp: now,
-    actor: actionMeta.reviewer,
+    actor,
     comment: comment?.trim() || actionMeta.defaultComment,
     reason: reason?.trim() || undefined,
     changes: [
@@ -704,6 +802,134 @@ function applyStatusChange(
   operation.reviewer = actionMeta.reviewer;
   operation.analystSummary = comment?.trim() || operation.analystSummary;
   operation.recommendedAction = actionMeta.recommendedAction;
+}
+
+function createRealtimeOperation(sequence: number): OperationRecord {
+  const now = new Date();
+  const createdAt = now.toISOString();
+
+  return {
+    id: `op_live_${sequence}`,
+    merchant: `Realtime Merchant ${sequence}`,
+    amount: 5000 + (sequence % 20) * 750,
+    currency: 'RUB',
+    status: sequence % 2 === 0 ? 'new' : 'flagged',
+    riskLevel: sequence % 3 === 0 ? 'medium' : 'high',
+    riskScore: sequence % 3 === 0 ? 63 : 82,
+    riskFactors: [
+      {
+        code: 'velocity_spike',
+        label: 'Velocity spike',
+        contribution: 24,
+        value: 'Rapid burst detected in last 10 minutes',
+      },
+      {
+        code: 'new_device',
+        label: 'New device',
+        contribution: 18,
+        value: 'Previously unseen device fingerprint',
+      },
+      {
+        code: 'amount_anomaly',
+        label: 'Amount anomaly',
+        contribution: 17,
+        value: 'Higher than normal for this customer cohort',
+      },
+    ],
+    createdAt,
+    updatedAt: createdAt,
+    customerId: `cus_live_${sequence % 12}`,
+    paymentMethod: sequence % 2 === 0 ? 'card' : 'sbp',
+    country: 'RU',
+    city: sequence % 2 === 0 ? 'Moscow' : 'Saint Petersburg',
+    deviceId: `dev_live_${sequence % 6}`,
+    ipAddress: `172.18.${sequence % 100}.${(sequence % 200) + 20}`,
+    reviewer: null,
+    flagReasons: ['velocity_spike', 'new_device'],
+    recommendedAction: 'Review immediately due to live anomaly burst.',
+    analystSummary: 'Realtime-generated operation for queue monitoring demo.',
+    history: [
+      {
+        id: `evt_live_${sequence}_1`,
+        type: 'created',
+        timestamp: createdAt,
+        actor: 'system',
+        comment: 'Operation created by realtime stream simulator',
+      },
+      {
+        id: `evt_live_${sequence}_2`,
+        type: 'risk_scored',
+        timestamp: createdAt,
+        actor: 'system',
+        comment: 'Risk score calculated for realtime event',
+        changes: [
+          { field: 'riskScore', before: null, after: sequence % 3 === 0 ? '63' : '82' },
+          { field: 'riskLevel', before: null, after: sequence % 3 === 0 ? 'medium' : 'high' },
+        ],
+      },
+    ],
+  };
+}
+
+function applyLiveQueueMutation(store: StoreState) {
+  const now = Date.now();
+
+  if (now - store.lastMutationAt < 9000) {
+    return;
+  }
+
+  const shouldInsertNewOperation = store.nextRealtimeId % 2 === 0;
+
+  if (shouldInsertNewOperation) {
+    const operation = createRealtimeOperation(store.nextRealtimeId);
+    store.operations.unshift(operation);
+    store.nextRealtimeId += 1;
+    store.lastMutationAt = now;
+    return;
+  }
+
+  const targetIndex = Math.min(
+    store.operations.length - 1,
+    Math.max(3, store.nextRealtimeId % 25),
+  );
+
+  const target = store.operations[targetIndex];
+
+  if (target) {
+    applyStatusChange(
+      target,
+      target.status === 'new' ? 'in_review' : target.status === 'in_review' ? 'blocked' : 'in_review',
+      'system_monitoring_signal',
+      'Operation was updated by realtime monitoring rules',
+      'system',
+    );
+  }
+
+  store.nextRealtimeId += 1;
+  store.lastMutationAt = now;
+}
+
+function applyLiveDetailMutation(store: StoreState, operation: OperationRecord) {
+  const now = Date.now();
+  const previousTouchAt = store.lastDetailMutationAtById[operation.id] ?? 0;
+
+  if (now - previousTouchAt < 14000) {
+    return;
+  }
+
+  const timestamp = new Date(now).toISOString();
+
+  operation.updatedAt = timestamp;
+  operation.history.unshift({
+    id: `evt_detail_live_${now}_${operation.id}`,
+    type: 'monitoring_signal_refreshed',
+    timestamp,
+    actor: 'system',
+    comment: 'Additional monitoring signal attached to the case in realtime.',
+    changes: [],
+  });
+
+  store.lastDetailMutationAtById[operation.id] = now;
 }
 
 function sortOperations(
@@ -735,7 +961,7 @@ function parseOptionalNumber(value: string | null): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function filterOperations(url: URL): OperationRecord[] {
+function filterOperations(items: OperationRecord[], url: URL): OperationRecord[] {
   const search = url.searchParams.get('search')?.trim().toLowerCase() ?? '';
   const status = url.searchParams.get('status') as OperationStatus | null;
   const riskLevel = url.searchParams.get('riskLevel') as OperationRiskLevel | null;
@@ -751,7 +977,7 @@ function filterOperations(url: URL): OperationRecord[] {
   const dateFromTimestamp = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
   const dateToTimestamp = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
 
-  return operations.filter((operation) => {
+  return items.filter((operation) => {
     const createdAtTimestamp = new Date(operation.createdAt).getTime();
 
     const matchesSearch =
@@ -782,8 +1008,8 @@ function filterOperations(url: URL): OperationRecord[] {
   });
 }
 
-function buildRelatedOperations(operation: OperationRecord) {
-  return operations
+function buildRelatedOperations(items: OperationRecord[], operation: OperationRecord) {
+  return items
     .filter((item) => item.id !== operation.id)
     .filter(
       (item) =>
@@ -813,6 +1039,11 @@ export const handlers = [
       return scenarioResponse;
     }
 
+    const volume = getVolume(request);
+    const store = getStore(volume);
+
+    applyLiveQueueMutation(store);
+
     const url = new URL(request.url);
 
     const rawPage = Number(url.searchParams.get('page') ?? '1');
@@ -823,7 +1054,7 @@ export const handlers = [
     const page = Number.isNaN(rawPage) ? 1 : Math.max(1, rawPage);
     const pageSize = Number.isNaN(rawPageSize) ? 10 : Math.min(100, Math.max(1, rawPageSize));
 
-    const filtered = filterOperations(url);
+    const filtered = filterOperations(store.operations, url);
     const sorted = sortOperations(filtered, sortBy, order);
 
     const startIndex = (page - 1) * pageSize;
@@ -845,15 +1076,22 @@ export const handlers = [
       return scenarioResponse;
     }
 
-    const operation = operations.find((item) => item.id === params.id);
+    const volume = getVolume(request);
+    const store = getStore(volume);
+
+    applyLiveQueueMutation(store);
+
+    const operation = store.operations.find((item) => item.id === params.id);
 
     if (!operation) {
       return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
     }
 
+    applyLiveDetailMutation(store, operation);
+
     return HttpResponse.json({
       ...operation,
-      relatedOperations: buildRelatedOperations(operation),
+      relatedOperations: buildRelatedOperations(store.operations, operation),
     });
   }),
 
@@ -864,7 +1102,10 @@ export const handlers = [
       return scenarioResponse;
     }
 
-    const operation = operations.find((item) => item.id === params.id);
+    const volume = getVolume(request);
+    const store = getStore(volume);
+
+    const operation = store.operations.find((item) => item.id === params.id);
 
     if (!operation) {
       return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
@@ -888,7 +1129,7 @@ export const handlers = [
 
     return HttpResponse.json({
       ...operation,
-      relatedOperations: buildRelatedOperations(operation),
+      relatedOperations: buildRelatedOperations(store.operations, operation),
     });
   }),
 
@@ -905,6 +1146,9 @@ export const handlers = [
         { status: 409 },
       );
     }
+
+    const volume = getVolume(request);
+    const store = getStore(volume);
 
     const body = (await request.json()) as {
       ids?: string[];
@@ -924,7 +1168,7 @@ export const handlers = [
     const updatedIds: string[] = [];
 
     body.ids.forEach((id) => {
-      const operation = operations.find((item) => item.id === id);
+      const operation = store.operations.find((item) => item.id === id);
 
       if (!operation) return;
 

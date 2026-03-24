@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ChangeEvent } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   ApiError,
@@ -94,9 +94,14 @@ export function OperationsListPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingBulkStatus, setPendingBulkStatus] = useState<OperationStatus | null>(null);
+  const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
+  const [realtimeMessage, setRealtimeMessage] = useState('');
 
   const queryClient = useQueryClient();
-  const pollingInterval = import.meta.env.MODE === 'test' ? false : 10000;
+  const previousTopIdsRef = useRef<string[]>([]);
+  const isFirstRealtimePassRef = useRef(true);
+
+  const pollingInterval = import.meta.env.MODE === 'test' ? false : 8000;
 
   const filters = useMemo(
     () => getOperationsFiltersFromSearchParams(searchParams),
@@ -109,11 +114,67 @@ export function OperationsListPage() {
     queryKey: ['operations', queryParams],
     queryFn: () => getOperations(queryParams),
     refetchInterval: pollingInterval,
+    refetchIntervalInBackground: true,
     placeholderData: (previousData) => previousData,
   });
 
   const operations = data?.items ?? [];
   const totalOperations = data?.total ?? 0;
+
+  useEffect(() => {
+    if (!data) return;
+
+    const currentIds = data.items.map((item) => item.id);
+
+    if (isFirstRealtimePassRef.current) {
+      previousTopIdsRef.current = currentIds;
+      isFirstRealtimePassRef.current = false;
+      return;
+    }
+
+    const isRealtimeSensitiveView =
+      filters.page === 1 &&
+      filters.sortBy === 'createdAt' &&
+      filters.order === 'desc' &&
+      !filters.search &&
+      filters.status === 'all' &&
+      filters.riskLevel === 'all';
+
+    if (!isRealtimeSensitiveView) {
+      previousTopIdsRef.current = currentIds;
+      return;
+    }
+
+    const previousIds = previousTopIdsRef.current;
+    const newIds = currentIds.filter((id) => !previousIds.includes(id));
+
+    if (newIds.length > 0) {
+      setHighlightedIds((current) => Array.from(new Set([...newIds, ...current])));
+      setRealtimeMessage(
+        newIds.length === 1
+          ? 'В очереди появилась 1 новая операция'
+          : `В очереди появилось ${newIds.length} новых операций`,
+      );
+
+      const timeoutId = window.setTimeout(() => {
+        setHighlightedIds((current) => current.filter((id) => !newIds.includes(id)));
+      }, 6000);
+
+      previousTopIdsRef.current = currentIds;
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    previousTopIdsRef.current = currentIds;
+  }, [
+    data,
+    filters.order,
+    filters.page,
+    filters.riskLevel,
+    filters.search,
+    filters.sortBy,
+    filters.status,
+  ]);
 
   const bulkMutation = useMutation({
     mutationFn: ({
@@ -214,11 +275,13 @@ export function OperationsListPage() {
   const handleFiltersChange = (nextFilters: OperationsFilterValues) => {
     setSearchParams(toOperationsSearchParams(nextFilters));
     setSelectedIds([]);
+    setHighlightedIds([]);
   };
 
   const handleReset = () => {
     setSearchParams(toOperationsSearchParams(defaultOperationsFilters));
     setSelectedIds([]);
+    setHighlightedIds([]);
   };
 
   const handleToggleOne = (id: string) => {
@@ -271,10 +334,35 @@ export function OperationsListPage() {
       </Typography>
 
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Очередь подозрительных операций для антифрод-аналитика.
+        Очередь подозрительных операций с live-обновлениями, bulk-обработкой и оптимизацией под большие объёмы данных.
       </Typography>
 
-      <OperationsFilters value={filters} onChange={handleFiltersChange} onReset={handleReset} />
+      <Box
+        sx={{
+          position: 'sticky',
+          top: 64,
+          zIndex: 3,
+          bgcolor: 'background.default',
+          pb: 2,
+          mb: 1,
+        }}
+      >
+        {realtimeMessage ? (
+          <Alert
+            severity="info"
+            sx={{ mb: 2 }}
+            action={
+              <Button color="inherit" size="small" onClick={() => setRealtimeMessage('')}>
+                Hide
+              </Button>
+            }
+          >
+            {realtimeMessage}
+          </Alert>
+        ) : null}
+
+        <OperationsFilters value={filters} onChange={handleFiltersChange} onReset={handleReset} />
+      </Box>
 
       {visibleSelectedIds.length > 0 && (
         <BulkActionsBar
@@ -293,6 +381,7 @@ export function OperationsListPage() {
         <Chip label={`Sort: ${filters.sortBy}`} />
         <Chip label={`Order: ${filters.order}`} />
         <Chip label={`Refreshed: ${formatRefreshedAt(data?.refreshedAt)}`} />
+        <Chip color="success" label="Live updates on" />
         {isFetching && !isLoading ? <Chip label="Refreshing..." color="warning" /> : null}
       </Stack>
 
@@ -322,6 +411,7 @@ export function OperationsListPage() {
             selectedIds={visibleSelectedIds}
             onToggleOne={handleToggleOne}
             onToggleAll={handleToggleAll}
+            highlightedIds={highlightedIds}
           />
 
           <TablePagination
@@ -331,7 +421,7 @@ export function OperationsListPage() {
             onPageChange={handleChangePage}
             rowsPerPage={filters.pageSize}
             onRowsPerPageChange={handleChangeRowsPerPage}
-            rowsPerPageOptions={[5, 10, 25, 50]}
+            rowsPerPageOptions={[5, 10, 25, 50, 100]}
           />
         </>
       )}

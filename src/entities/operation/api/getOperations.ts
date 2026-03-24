@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getMockScenario } from '@/shared/lib/mockScenario';
+import { getMockDataVolume, getMockScenario } from '@/shared/lib/mockScenario';
 
 export class ApiError extends Error {
   status: number;
@@ -165,6 +165,7 @@ export type OperationDecisionPayload = {
 function createRequestHeaders() {
   return {
     'x-mock-scenario': getMockScenario(),
+    'x-mock-volume': getMockDataVolume(),
   };
 }
 
