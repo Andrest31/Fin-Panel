@@ -15,6 +15,9 @@ type OperationRiskLevel = 'low' | 'medium' | 'high';
 type OperationsSortBy = 'createdAt' | 'amount' | 'merchant';
 type SortOrder = 'asc' | 'desc';
 type PaymentMethod = 'card' | 'sbp';
+type CollaboratorRole = 'fraud_analyst' | 'senior_analyst' | 'compliance' | 'support';
+type CaseQueue = 'manual_review' | 'senior_review' | 'compliance' | 'customer_confirmation';
+type CasePriority = 'low' | 'medium' | 'high' | 'critical';
 
 type RiskFactorCode =
   | 'velocity_spike'
@@ -48,6 +51,20 @@ type OperationRiskFactor = {
   value: string;
 };
 
+type CaseAssignee = {
+  id: string;
+  name: string;
+  role: CollaboratorRole;
+};
+
+type CollaborationNote = {
+  id: string;
+  author: string;
+  role: CollaboratorRole;
+  createdAt: string;
+  text: string;
+};
+
 type OperationRecord = {
   id: string;
   merchant: string;
@@ -70,12 +87,28 @@ type OperationRecord = {
   history: OperationHistoryEvent[];
   recommendedAction: string;
   analystSummary: string;
+  assignee: CaseAssignee | null;
+  queue: CaseQueue;
+  priority: CasePriority;
+  slaDeadline: string | null;
+  collaborationNotes: CollaborationNote[];
 };
 
 type StatusUpdateRequest = {
   status?: OperationStatus;
   reason?: string;
   comment?: string;
+};
+
+type CollaborationUpdateRequest = {
+  action?: 'assign' | 'escalate' | 'add_note';
+  assigneeId?: string;
+  assigneeName?: string;
+  assigneeRole?: CollaboratorRole;
+  queue?: CaseQueue;
+  priority?: CasePriority;
+  reason?: string;
+  note?: string;
 };
 
 type StoreState = {
@@ -119,6 +152,23 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['large_amount', 'new_device', 'velocity_spike'],
     recommendedAction: 'Block operation or request additional verification.',
     analystSummary: 'High-risk operation with unusual amount and rapid repeat attempts from a new device.',
+    assignee: {
+      id: 'spec_01',
+      name: 'Irina Petrova',
+      role: 'fraud_analyst',
+    },
+    queue: 'manual_review',
+    priority: 'high',
+    slaDeadline: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    collaborationNotes: [
+      {
+        id: 'note_001',
+        author: 'Irina Petrova',
+        role: 'fraud_analyst',
+        createdAt: '2026-03-24T10:22:00.000Z',
+        text: 'Needs device reputation validation before final decision.',
+      },
+    ],
     history: [
       {
         id: 'evt_001',
@@ -136,6 +186,17 @@ const baseOperations: OperationRecord[] = [
         changes: [
           { field: 'riskScore', before: null, after: '87' },
           { field: 'riskLevel', before: null, after: 'high' },
+        ],
+      },
+      {
+        id: 'evt_003_assign',
+        type: 'assigned',
+        timestamp: '2026-03-24T10:21:00.000Z',
+        actor: 'system',
+        comment: 'Case assigned to fraud analyst',
+        changes: [
+          { field: 'assignee', before: null, after: 'Irina Petrova' },
+          { field: 'queue', before: 'manual_review', after: 'manual_review' },
         ],
       },
     ],
@@ -164,16 +225,25 @@ const baseOperations: OperationRecord[] = [
     flagReasons: [],
     recommendedAction: 'Approve operation.',
     analystSummary: 'Typical low-risk daily purchase pattern.',
+    assignee: {
+      id: 'spec_01',
+      name: 'Irina Petrova',
+      role: 'fraud_analyst',
+    },
+    queue: 'manual_review',
+    priority: 'low',
+    slaDeadline: null,
+    collaborationNotes: [],
     history: [
       {
-        id: 'evt_003',
+        id: 'evt_004',
         type: 'created',
         timestamp: '2026-03-24T10:18:00.000Z',
         actor: 'system',
         comment: 'Operation created',
       },
       {
-        id: 'evt_004',
+        id: 'evt_005',
         type: 'approved',
         timestamp: '2026-03-24T10:19:00.000Z',
         actor: 'analyst_01',
@@ -211,16 +281,40 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['merchant_pattern'],
     recommendedAction: 'Send to manual review and inspect customer history.',
     analystSummary: 'Moderate-risk electronics purchase with partial fraud indicators.',
+    assignee: {
+      id: 'spec_02',
+      name: 'Dmitry Sokolov',
+      role: 'fraud_analyst',
+    },
+    queue: 'manual_review',
+    priority: 'high',
+    slaDeadline: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
+    collaborationNotes: [
+      {
+        id: 'note_003',
+        author: 'Dmitry Sokolov',
+        role: 'fraud_analyst',
+        createdAt: '2026-03-24T10:26:00.000Z',
+        text: 'Need to compare device with recent marketplace activity.',
+      },
+      {
+        id: 'note_004',
+        author: 'Anna Voronina',
+        role: 'compliance',
+        createdAt: '2026-03-24T10:27:00.000Z',
+        text: 'No immediate compliance block, but merchant category needs manual validation.',
+      },
+    ],
     history: [
       {
-        id: 'evt_005',
+        id: 'evt_006',
         type: 'created',
         timestamp: '2026-03-24T10:21:00.000Z',
         actor: 'system',
         comment: 'Operation created',
       },
       {
-        id: 'evt_006',
+        id: 'evt_007',
         type: 'sent_to_review',
         timestamp: '2026-03-24T10:25:00.000Z',
         actor: 'system',
@@ -228,6 +322,16 @@ const baseOperations: OperationRecord[] = [
         reason: 'merchant_pattern',
         changes: [
           { field: 'status', before: 'new', after: 'in_review' },
+        ],
+      },
+      {
+        id: 'evt_008',
+        type: 'assigned',
+        timestamp: '2026-03-24T10:25:30.000Z',
+        actor: 'system',
+        comment: 'Case assigned to analyst',
+        changes: [
+          { field: 'assignee', before: null, after: 'Dmitry Sokolov' },
         ],
       },
     ],
@@ -257,16 +361,33 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['mcc_anomaly', 'large_amount'],
     recommendedAction: 'Block operation pending customer confirmation.',
     analystSummary: 'Severe anomaly for both amount and merchant category.',
+    assignee: {
+      id: 'spec_03',
+      name: 'Anna Voronina',
+      role: 'compliance',
+    },
+    queue: 'compliance',
+    priority: 'critical',
+    slaDeadline: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+    collaborationNotes: [
+      {
+        id: 'note_005',
+        author: 'Anna Voronina',
+        role: 'compliance',
+        createdAt: '2026-03-24T10:30:00.000Z',
+        text: 'Escalated due to amount anomaly plus MCC mismatch.',
+      },
+    ],
     history: [
       {
-        id: 'evt_007',
+        id: 'evt_009',
         type: 'created',
         timestamp: '2026-03-24T10:26:00.000Z',
         actor: 'system',
         comment: 'Operation created',
       },
       {
-        id: 'evt_008',
+        id: 'evt_010',
         type: 'flagged',
         timestamp: '2026-03-24T10:27:00.000Z',
         actor: 'system',
@@ -274,6 +395,17 @@ const baseOperations: OperationRecord[] = [
         reason: 'mcc_anomaly',
         changes: [
           { field: 'status', before: 'new', after: 'flagged' },
+        ],
+      },
+      {
+        id: 'evt_011',
+        type: 'escalated',
+        timestamp: '2026-03-24T10:29:30.000Z',
+        actor: 'system',
+        comment: 'Case escalated to compliance queue',
+        changes: [
+          { field: 'queue', before: 'manual_review', after: 'compliance' },
+          { field: 'priority', before: 'high', after: 'critical' },
         ],
       },
     ],
@@ -303,9 +435,14 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['travel_pattern'],
     recommendedAction: 'Manual review recommended before approval.',
     analystSummary: 'Travel-related spend with mild location anomaly.',
+    assignee: null,
+    queue: 'manual_review',
+    priority: 'medium',
+    slaDeadline: null,
+    collaborationNotes: [],
     history: [
       {
-        id: 'evt_009',
+        id: 'evt_012',
         type: 'created',
         timestamp: '2026-03-24T10:30:00.000Z',
         actor: 'system',
@@ -337,24 +474,22 @@ const baseOperations: OperationRecord[] = [
     flagReasons: [],
     recommendedAction: 'Approve operation.',
     analystSummary: 'Routine transportation-related purchase.',
+    assignee: {
+      id: 'spec_04',
+      name: 'Maria Volkova',
+      role: 'support',
+    },
+    queue: 'customer_confirmation',
+    priority: 'low',
+    slaDeadline: null,
+    collaborationNotes: [],
     history: [
       {
-        id: 'evt_010',
+        id: 'evt_013',
         type: 'created',
         timestamp: '2026-03-24T10:33:00.000Z',
         actor: 'system',
         comment: 'Operation created',
-      },
-      {
-        id: 'evt_011',
-        type: 'approved',
-        timestamp: '2026-03-24T10:34:00.000Z',
-        actor: 'analyst_03',
-        comment: 'Known low-risk pattern',
-        reason: 'known_customer',
-        changes: [
-          { field: 'status', before: 'new', after: 'approved' },
-        ],
       },
     ],
   },
@@ -383,24 +518,30 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['high_risk_merchant', 'velocity_spike'],
     recommendedAction: 'Keep blocked and escalate if retried again.',
     analystSummary: 'Fraud-prone merchant with strong negative signals.',
+    assignee: {
+      id: 'spec_05',
+      name: 'Pavel Morozov',
+      role: 'senior_analyst',
+    },
+    queue: 'senior_review',
+    priority: 'critical',
+    slaDeadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    collaborationNotes: [
+      {
+        id: 'note_007',
+        author: 'Pavel Morozov',
+        role: 'senior_analyst',
+        createdAt: '2026-03-24T10:38:00.000Z',
+        text: 'Keep blocked. Escalate only if customer disputes.',
+      },
+    ],
     history: [
       {
-        id: 'evt_012',
+        id: 'evt_014',
         type: 'created',
         timestamp: '2026-03-24T10:36:00.000Z',
         actor: 'system',
         comment: 'Operation created',
-      },
-      {
-        id: 'evt_013',
-        type: 'blocked',
-        timestamp: '2026-03-24T10:37:00.000Z',
-        actor: 'analyst_04',
-        comment: 'Blocked due to fraud indicators',
-        reason: 'stolen_card_signal',
-        changes: [
-          { field: 'status', before: 'new', after: 'blocked' },
-        ],
       },
     ],
   },
@@ -429,24 +570,22 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['new_device'],
     recommendedAction: 'Continue manual review.',
     analystSummary: 'Needs device-level validation before final decision.',
+    assignee: {
+      id: 'spec_02',
+      name: 'Dmitry Sokolov',
+      role: 'fraud_analyst',
+    },
+    queue: 'manual_review',
+    priority: 'medium',
+    slaDeadline: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+    collaborationNotes: [],
     history: [
       {
-        id: 'evt_014',
+        id: 'evt_015',
         type: 'created',
         timestamp: '2026-03-24T10:39:00.000Z',
         actor: 'system',
         comment: 'Operation created',
-      },
-      {
-        id: 'evt_015',
-        type: 'sent_to_review',
-        timestamp: '2026-03-24T10:41:00.000Z',
-        actor: 'system',
-        comment: 'Review requested',
-        reason: 'new_device',
-        changes: [
-          { field: 'status', before: 'new', after: 'in_review' },
-        ],
       },
     ],
   },
@@ -473,6 +612,11 @@ const baseOperations: OperationRecord[] = [
     flagReasons: [],
     recommendedAction: 'Approve operation.',
     analystSummary: 'Routine small-ticket spending behaviour.',
+    assignee: null,
+    queue: 'manual_review',
+    priority: 'low',
+    slaDeadline: null,
+    collaborationNotes: [],
     history: [
       {
         id: 'evt_016',
@@ -508,6 +652,11 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['merchant_pattern'],
     recommendedAction: 'Review if customer history is sparse.',
     analystSummary: 'Medium-risk digital goods purchase.',
+    assignee: null,
+    queue: 'manual_review',
+    priority: 'medium',
+    slaDeadline: null,
+    collaborationNotes: [],
     history: [
       {
         id: 'evt_017',
@@ -543,6 +692,15 @@ const baseOperations: OperationRecord[] = [
     flagReasons: ['large_amount', 'ip_reputation'],
     recommendedAction: 'Block unless customer can confirm intent.',
     analystSummary: 'Large electronics purchase from suspicious network segment.',
+    assignee: {
+      id: 'spec_03',
+      name: 'Anna Voronina',
+      role: 'compliance',
+    },
+    queue: 'compliance',
+    priority: 'critical',
+    slaDeadline: new Date(Date.now() + 70 * 60 * 1000).toISOString(),
+    collaborationNotes: [],
     history: [
       {
         id: 'evt_018',
@@ -576,6 +734,11 @@ const baseOperations: OperationRecord[] = [
     flagReasons: [],
     recommendedAction: 'Approve operation.',
     analystSummary: 'Low-risk transportation spend.',
+    assignee: null,
+    queue: 'manual_review',
+    priority: 'low',
+    slaDeadline: null,
+    collaborationNotes: [],
     history: [
       {
         id: 'evt_019',
@@ -670,6 +833,11 @@ function cloneOperation(source: OperationRecord, index: number): OperationRecord
       ...structuredClone(event),
       id: `${event.id}_${index + 1}_${eventIndex + 1}`,
       timestamp: new Date(createdAt.getTime() + eventIndex * 45_000).toISOString(),
+    })),
+    collaborationNotes: source.collaborationNotes.map((note, noteIndex) => ({
+      ...structuredClone(note),
+      id: `${note.id}_${index + 1}_${noteIndex + 1}`,
+      createdAt: new Date(createdAt.getTime() + 30_000 + noteIndex * 30_000).toISOString(),
     })),
   };
 }
@@ -804,6 +972,93 @@ function applyStatusChange(
   operation.recommendedAction = actionMeta.recommendedAction;
 }
 
+function applyCollaborationChange(
+  operation: OperationRecord,
+  payload: CollaborationUpdateRequest,
+) {
+  const now = new Date().toISOString();
+
+  if (payload.action === 'assign') {
+    const previousAssignee = operation.assignee?.name ?? null;
+
+    operation.assignee = {
+      id: payload.assigneeId ?? 'spec_unknown',
+      name: payload.assigneeName ?? 'Unknown specialist',
+      role: payload.assigneeRole ?? 'fraud_analyst',
+    };
+    operation.queue = payload.queue ?? operation.queue;
+    operation.priority = payload.priority ?? operation.priority;
+    operation.updatedAt = now;
+
+    operation.history.unshift({
+      id: `evt_assign_${Date.now()}_${operation.id}`,
+      type: 'reassigned',
+      timestamp: now,
+      actor: 'analyst_99',
+      comment: payload.note ?? 'Case reassigned',
+      reason: payload.reason,
+      changes: [
+        { field: 'assignee', before: previousAssignee, after: operation.assignee.name },
+        { field: 'queue', before: operation.queue, after: payload.queue ?? operation.queue },
+      ],
+    });
+  }
+
+  if (payload.action === 'escalate') {
+    const previousQueue = operation.queue;
+    const previousPriority = operation.priority;
+    const previousAssignee = operation.assignee?.name ?? null;
+
+    operation.assignee = {
+      id: payload.assigneeId ?? 'spec_escalated',
+      name: payload.assigneeName ?? 'Escalated specialist',
+      role: payload.assigneeRole ?? 'compliance',
+    };
+    operation.queue = payload.queue ?? 'compliance';
+    operation.priority = payload.priority ?? 'critical';
+    operation.updatedAt = now;
+
+    operation.history.unshift({
+      id: `evt_escalate_${Date.now()}_${operation.id}`,
+      type: 'escalated',
+      timestamp: now,
+      actor: 'analyst_99',
+      comment: payload.note ?? 'Case escalated',
+      reason: payload.reason,
+      changes: [
+        { field: 'assignee', before: previousAssignee, after: operation.assignee.name },
+        { field: 'queue', before: previousQueue, after: operation.queue },
+        { field: 'priority', before: previousPriority, after: operation.priority },
+      ],
+    });
+  }
+
+  if (payload.action === 'add_note') {
+    operation.updatedAt = now;
+
+    operation.history.unshift({
+      id: `evt_note_${Date.now()}_${operation.id}`,
+      type: 'note_added',
+      timestamp: now,
+      actor: 'analyst_99',
+      comment: payload.note ?? 'Note added',
+      reason: payload.reason,
+      changes: [],
+    });
+  }
+
+  operation.collaborationNotes.unshift({
+    id: `note_${Date.now()}_${operation.id}`,
+    author: 'Alexey Morozov',
+    role:
+      payload.action === 'escalate'
+        ? (payload.assigneeRole ?? 'compliance')
+        : 'fraud_analyst',
+    createdAt: now,
+    text: payload.note ?? 'Collaboration note added',
+  });
+}
+
 function createRealtimeOperation(sequence: number): OperationRecord {
   const now = new Date();
   const createdAt = now.toISOString();
@@ -848,6 +1103,11 @@ function createRealtimeOperation(sequence: number): OperationRecord {
     flagReasons: ['velocity_spike', 'new_device'],
     recommendedAction: 'Review immediately due to live anomaly burst.',
     analystSummary: 'Realtime-generated operation for queue monitoring demo.',
+    assignee: null,
+    queue: 'manual_review',
+    priority: 'high',
+    slaDeadline: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+    collaborationNotes: [],
     history: [
       {
         id: `evt_live_${sequence}_1`,
@@ -928,6 +1188,16 @@ function applyLiveDetailMutation(store: StoreState, operation: OperationRecord) 
     comment: 'Additional monitoring signal attached to the case in realtime.',
     changes: [],
   });
+
+  if (operation.assignee && operation.collaborationNotes.length < 6) {
+    operation.collaborationNotes.unshift({
+      id: `note_live_${now}_${operation.id}`,
+      author: operation.assignee.name,
+      role: operation.assignee.role,
+      createdAt: timestamp,
+      text: 'Realtime monitoring refreshed the case context.',
+    });
+  }
 
   store.lastDetailMutationAtById[operation.id] = now;
 }
@@ -1179,6 +1449,43 @@ export const handlers = [
     return HttpResponse.json({
       updatedIds,
       status: body.status,
+    });
+  }),
+
+  http.patch('/api/operations/:id/collaboration', async ({ params, request }) => {
+    const scenarioResponse = await maybeApplyScenario(request);
+
+    if (scenarioResponse) {
+      return scenarioResponse;
+    }
+
+    const volume = getVolume(request);
+    const store = getStore(volume);
+
+    const operation = store.operations.find((item) => item.id === params.id);
+
+    if (!operation) {
+      return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
+    }
+
+    if (getScenario(request) === 'conflict') {
+      return HttpResponse.json(
+        { message: 'Case was already updated by another specialist' },
+        { status: 409 },
+      );
+    }
+
+    const body = (await request.json()) as CollaborationUpdateRequest;
+
+    if (!body.action || !body.reason || !body.note) {
+      return HttpResponse.json({ message: 'Invalid collaboration payload' }, { status: 400 });
+    }
+
+    applyCollaborationChange(operation, body);
+
+    return HttpResponse.json({
+      ...operation,
+      relatedOperations: buildRelatedOperations(store.operations, operation),
     });
   }),
 ];

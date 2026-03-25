@@ -32,6 +32,22 @@ export const riskFactorCodeSchema = z.enum([
   'mcc_anomaly',
 ]);
 
+export const collaboratorRoleSchema = z.enum([
+  'fraud_analyst',
+  'senior_analyst',
+  'compliance',
+  'support',
+]);
+
+export const caseQueueSchema = z.enum([
+  'manual_review',
+  'senior_review',
+  'compliance',
+  'customer_confirmation',
+]);
+
+export const casePrioritySchema = z.enum(['low', 'medium', 'high', 'critical']);
+
 export const operationRiskFactorSchema = z.object({
   code: riskFactorCodeSchema,
   label: z.string(),
@@ -86,12 +102,31 @@ export const relatedOperationSchema = z.object({
   relation: z.string(),
 });
 
+export const caseAssigneeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: collaboratorRoleSchema,
+});
+
+export const collaborationNoteSchema = z.object({
+  id: z.string(),
+  author: z.string(),
+  role: collaboratorRoleSchema,
+  createdAt: z.string(),
+  text: z.string(),
+});
+
 export const operationDetailsSchema = operationListItemSchema.extend({
   riskFactors: z.array(operationRiskFactorSchema),
   history: z.array(operationHistoryEventSchema),
   relatedOperations: z.array(relatedOperationSchema),
   recommendedAction: z.string(),
   analystSummary: z.string(),
+  assignee: caseAssigneeSchema.nullable(),
+  queue: caseQueueSchema,
+  priority: casePrioritySchema,
+  slaDeadline: z.string().nullable(),
+  collaborationNotes: z.array(collaborationNoteSchema),
 });
 
 export const operationsSortBySchema = z.enum(['createdAt', 'amount', 'merchant']);
@@ -140,6 +175,17 @@ export const bulkUpdateOperationStatusResponseSchema = z.object({
   status: operationStatusSchema,
 });
 
+export const updateOperationCollaborationBodySchema = z.object({
+  action: z.enum(['assign', 'escalate', 'add_note']),
+  assigneeId: z.string().optional(),
+  assigneeName: z.string().optional(),
+  assigneeRole: collaboratorRoleSchema.optional(),
+  queue: caseQueueSchema.optional(),
+  priority: casePrioritySchema.optional(),
+  reason: z.string().trim().min(1),
+  note: z.string().trim().min(3),
+});
+
 export type Operation = z.infer<typeof operationListItemSchema>;
 export type OperationDetails = z.infer<typeof operationDetailsSchema>;
 export type OperationHistoryEvent = z.infer<typeof operationHistoryEventSchema>;
@@ -155,12 +201,21 @@ export type GetOperationsResponse = z.infer<typeof operationsResponseSchema>;
 export type BulkUpdateOperationStatusResponse = z.infer<
   typeof bulkUpdateOperationStatusResponseSchema
 >;
+export type CaseAssignee = z.infer<typeof caseAssigneeSchema>;
+export type CollaborationNote = z.infer<typeof collaborationNoteSchema>;
+export type CollaboratorRole = z.infer<typeof collaboratorRoleSchema>;
+export type CaseQueue = z.infer<typeof caseQueueSchema>;
+export type CasePriority = z.infer<typeof casePrioritySchema>;
 
 export type OperationDecisionPayload = {
   status: OperationStatus;
   reason: string;
   comment: string;
 };
+
+export type OperationCollaborationPayload = z.infer<
+  typeof updateOperationCollaborationBodySchema
+>;
 
 function createRequestHeaders() {
   return {
@@ -278,4 +333,22 @@ export async function bulkUpdateOperationStatus(
   });
 
   return parseJsonResponse(response, bulkUpdateOperationStatusResponseSchema);
+}
+
+export async function updateOperationCollaboration(
+  id: string,
+  payload: OperationCollaborationPayload,
+): Promise<OperationDetails> {
+  const requestBody = updateOperationCollaborationBodySchema.parse(payload);
+
+  const response = await fetch(`/api/operations/${id}/collaboration`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...createRequestHeaders(),
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  return parseJsonResponse(response, operationDetailsSchema);
 }

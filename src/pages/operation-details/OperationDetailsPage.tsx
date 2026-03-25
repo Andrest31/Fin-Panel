@@ -22,6 +22,7 @@ import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
   ApiError,
   getOperationById,
+  updateOperationCollaboration,
   updateOperationStatus,
   type GetOperationsResponse,
   type OperationDetails,
@@ -33,6 +34,7 @@ import {
   applyOptimisticDecisionToOperationsResponse,
 } from '@/entities/operation/lib/optimisticUpdates';
 import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
+import { CollaborationActionDialog } from '@/features/operation-collaboration/ui/CollaborationActionDialog';
 
 function getRiskColor(riskLevel: 'low' | 'medium' | 'high') {
   if (riskLevel === 'high') return 'error';
@@ -44,6 +46,13 @@ function getStatusColor(status: 'new' | 'in_review' | 'approved' | 'blocked' | '
   if (status === 'approved') return 'success';
   if (status === 'blocked' || status === 'flagged') return 'error';
   if (status === 'in_review') return 'warning';
+  return 'default';
+}
+
+function getPriorityColor(priority: 'low' | 'medium' | 'high' | 'critical') {
+  if (priority === 'critical') return 'error';
+  if (priority === 'high') return 'warning';
+  if (priority === 'medium') return 'info';
   return 'default';
 }
 
@@ -59,14 +68,14 @@ function formatRiskFactorContribution(factor: OperationRiskFactor) {
 
 function getMutationErrorMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 409) {
-    return 'Операция уже была обновлена другим аналитиком. Данные перечитаны.';
+    return 'Операция уже была обновлена другим специалистом. Данные перечитаны.';
   }
 
   if (error instanceof Error) {
     return error.message;
   }
 
-  return 'Не удалось обновить статус';
+  return 'Не удалось обновить кейс';
 }
 
 type DecisionPayload = {
@@ -80,6 +89,8 @@ type MutationContext = {
   previousOperationsLists: Array<[readonly unknown[], GetOperationsResponse | undefined]>;
 };
 
+type CollaborationAction = 'assign' | 'escalate' | 'add_note';
+
 export function OperationDetailsPage() {
   const { id = '' } = useParams();
   const queryClient = useQueryClient();
@@ -87,6 +98,8 @@ export function OperationDetailsPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingStatus, setPendingStatus] = useState<OperationStatus | null>(null);
+  const [pendingCollaborationAction, setPendingCollaborationAction] =
+    useState<CollaborationAction | null>(null);
   const [liveMessage, setLiveMessage] = useState('');
   const [highlightedHistoryEventIds, setHighlightedHistoryEventIds] = useState<string[]>([]);
 
@@ -117,10 +130,10 @@ export function OperationDetailsPage() {
 
     const freshHistoryIds = data.history
       .map((event) => event.id)
-      .filter((id) => !previousHistoryIds.includes(id));
+      .filter((historyId) => !previousHistoryIds.includes(historyId));
 
     if (previousUpdatedAt && previousUpdatedAt !== data.updatedAt) {
-      setLiveMessage('Карточка операции обновилась в реальном времени.');
+      setLiveMessage('Карточка кейса обновилась в реальном времени.');
     }
 
     if (freshHistoryIds.length > 0) {
@@ -219,6 +232,31 @@ export function OperationDetailsPage() {
     },
   });
 
+  const collaborationMutation = useMutation({
+    mutationFn: (payload: Parameters<typeof updateOperationCollaboration>[1]) =>
+      updateOperationCollaboration(id, payload),
+
+    onSuccess: (updatedOperation) => {
+      queryClient.setQueryData(['operation', id], updatedOperation);
+      setSuccessMessage('Collaboration workflow updated');
+      setPendingCollaborationAction(null);
+    },
+
+    onError: async (mutationError) => {
+      setErrorMessage(getMutationErrorMessage(mutationError));
+      setPendingCollaborationAction(null);
+
+      if (mutationError instanceof ApiError && mutationError.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: ['operation', id] });
+      }
+    },
+
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['operations'] });
+      await queryClient.invalidateQueries({ queryKey: ['operation', id] });
+    },
+  });
+
   const handleOpenDecision = (status: OperationStatus) => {
     setPendingStatus(status);
   };
@@ -252,7 +290,7 @@ export function OperationDetailsPage() {
 
         <Typography variant="h4">Case Review</Typography>
         <Typography variant="body2" color="text.secondary">
-          Экран расследования операции: explainable risk scoring, decision workflow, audit trail и live-обновления карточки.
+          Экран расследования операции: explainable risk scoring, collaboration workflow, audit trail и live-обновления карточки.
         </Typography>
       </Stack>
 
@@ -522,6 +560,62 @@ export function OperationDetailsPage() {
             <Card>
               <CardContent>
                 <Typography variant="h6" sx={{ mb: 2 }}>
+                  Case ownership
+                </Typography>
+
+                <Stack spacing={1.5} sx={{ mb: 3 }}>
+                  <Chip
+                    label={
+                      data.assignee
+                        ? `${data.assignee.name} • ${data.assignee.role}`
+                        : 'Unassigned'
+                    }
+                    color={data.assignee ? 'info' : 'default'}
+                  />
+                  <Chip label={`Queue: ${data.queue}`} variant="outlined" />
+                  <Chip label={`Priority: ${data.priority}`} color={getPriorityColor(data.priority)} />
+                  <Chip
+                    label={
+                      data.slaDeadline
+                        ? `SLA: ${new Date(data.slaDeadline).toLocaleString()}`
+                        : 'SLA: not set'
+                    }
+                    variant="outlined"
+                  />
+                </Stack>
+
+                <Stack spacing={1}>
+                  <Button
+                    variant="contained"
+                    onClick={() => setPendingCollaborationAction('assign')}
+                    disabled={collaborationMutation.isPending}
+                  >
+                    Reassign case
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    onClick={() => setPendingCollaborationAction('escalate')}
+                    disabled={collaborationMutation.isPending}
+                  >
+                    Escalate
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    onClick={() => setPendingCollaborationAction('add_note')}
+                    disabled={collaborationMutation.isPending}
+                  >
+                    Add note
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 2 }}>
                   Decision workflow
                 </Typography>
 
@@ -591,6 +685,31 @@ export function OperationDetailsPage() {
             <Card sx={{ mt: 3 }}>
               <CardContent>
                 <Typography variant="h6" sx={{ mb: 2 }}>
+                  Collaboration notes
+                </Typography>
+
+                <List>
+                  {data.collaborationNotes.map((note, index) => (
+                    <ListItem key={note.id} disableGutters divider={index < data.collaborationNotes.length - 1}>
+                      <ListItemText
+                        primary={`${note.author} • ${note.role}`}
+                        secondary={`${new Date(note.createdAt).toLocaleString()} — ${note.text}`}
+                      />
+                    </ListItem>
+                  ))}
+
+                  {data.collaborationNotes.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No collaboration notes yet.
+                    </Typography>
+                  ) : null}
+                </List>
+              </CardContent>
+            </Card>
+
+            <Card sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 2 }}>
                   Related operations
                 </Typography>
 
@@ -643,6 +762,25 @@ export function OperationDetailsPage() {
         isPending={statusMutation.isPending}
         onClose={handleCloseDecision}
         onSubmit={handleSubmitDecision}
+      />
+
+      <CollaborationActionDialog
+        open={Boolean(pendingCollaborationAction)}
+        action={pendingCollaborationAction}
+        isPending={collaborationMutation.isPending}
+        onClose={() => {
+          if (!collaborationMutation.isPending) {
+            setPendingCollaborationAction(null);
+          }
+        }}
+        onSubmit={(payload) => {
+          if (!pendingCollaborationAction) return;
+
+          collaborationMutation.mutate({
+            action: pendingCollaborationAction,
+            ...payload,
+          });
+        }}
       />
 
       <Snackbar
