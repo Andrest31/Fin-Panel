@@ -1,45 +1,32 @@
 export type MockScenario =
-  | "normal"
-  | "slow"
-  | "flaky"
-  | "rate_limit"
-  | "server_error"
-  | "conflict";
+  | 'normal'
+  | 'slow'
+  | 'flaky'
+  | 'rate_limit'
+  | 'server_error'
+  | 'conflict';
 
-export type MockDataVolume = "small" | "medium" | "large" | "xlarge";
+export type MockDataVolume = 'small' | 'medium' | 'large' | 'xlarge';
 
-export type OperationStatus =
-  | "new"
-  | "in_review"
-  | "approved"
-  | "blocked"
-  | "flagged";
-export type OperationRiskLevel = "low" | "medium" | "high";
-export type OperationsSortBy = "createdAt" | "amount" | "merchant";
-export type SortOrder = "asc" | "desc";
-export type PaymentMethod = "card" | "sbp";
-export type CollaboratorRole =
-  | "fraud_analyst"
-  | "senior_analyst"
-  | "compliance"
-  | "support";
-export type CaseQueue =
-  | "manual_review"
-  | "senior_review"
-  | "compliance"
-  | "customer_confirmation";
-export type CasePriority = "low" | "medium" | "high" | "critical";
+export type OperationStatus = 'new' | 'in_review' | 'approved' | 'blocked' | 'flagged';
+export type OperationRiskLevel = 'low' | 'medium' | 'high';
+export type OperationsSortBy = 'createdAt' | 'amount' | 'merchant';
+export type SortOrder = 'asc' | 'desc';
+export type PaymentMethod = 'card' | 'sbp';
+export type CollaboratorRole = 'fraud_analyst' | 'senior_analyst' | 'compliance' | 'support';
+export type CaseQueue = 'manual_review' | 'senior_review' | 'compliance' | 'customer_confirmation';
+export type CasePriority = 'low' | 'medium' | 'high' | 'critical';
 
 export type RiskFactorCode =
-  | "velocity_spike"
-  | "new_device"
-  | "geo_mismatch"
-  | "high_risk_merchant"
-  | "ip_reputation"
-  | "amount_anomaly"
-  | "merchant_pattern"
-  | "travel_pattern"
-  | "mcc_anomaly";
+  | 'velocity_spike'
+  | 'new_device'
+  | 'geo_mismatch'
+  | 'high_risk_merchant'
+  | 'ip_reputation'
+  | 'amount_anomaly'
+  | 'merchant_pattern'
+  | 'travel_pattern'
+  | 'mcc_anomaly';
 
 export type OperationHistoryEvent = {
   id: string;
@@ -112,7 +99,7 @@ export type StatusUpdateRequest = {
 };
 
 export type CollaborationUpdateRequest = {
-  action?: "assign" | "escalate" | "add_note";
+  action?: 'assign' | 'escalate' | 'add_note';
   assigneeId?: string;
   assigneeName?: string;
   assigneeRole?: CollaboratorRole;
