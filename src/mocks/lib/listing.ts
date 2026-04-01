@@ -1,4 +1,7 @@
+import { getSlaState } from '@/entities/operation/lib/decisioning';
 import type {
+  CasePriority,
+  CaseQueue,
   OperationRecord,
   OperationRiskLevel,
   OperationsSortBy,
@@ -6,6 +9,18 @@ import type {
   PaymentMethod,
   SortOrder,
 } from './types';
+
+function getPriorityWeight(priority: CasePriority) {
+  if (priority === 'critical') return 4;
+  if (priority === 'high') return 3;
+  if (priority === 'medium') return 2;
+  return 1;
+}
+
+function getSlaSortValue(slaDeadline: string | null) {
+  if (!slaDeadline) return Number.MAX_SAFE_INTEGER;
+  return new Date(slaDeadline).getTime();
+}
 
 function toListItem(operation: OperationRecord) {
   return {
@@ -26,6 +41,10 @@ function toListItem(operation: OperationRecord) {
     ipAddress: operation.ipAddress,
     reviewer: operation.reviewer,
     flagReasons: operation.flagReasons,
+    queue: operation.queue,
+    priority: operation.priority,
+    slaDeadline: operation.slaDeadline,
+    slaState: getSlaState(operation.slaDeadline),
   };
 }
 
@@ -35,15 +54,26 @@ function sortOperations(
   order: SortOrder,
 ): OperationRecord[] {
   const sorted = [...data].sort((a, b) => {
-    if (sortBy === 'amount') {
-      return a.amount - b.amount;
-    }
+    switch (sortBy) {
+      case 'amount':
+        return a.amount - b.amount;
 
-    if (sortBy === 'merchant') {
-      return a.merchant.localeCompare(b.merchant);
-    }
+      case 'merchant':
+        return a.merchant.localeCompare(b.merchant);
 
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      case 'riskScore':
+        return a.riskScore - b.riskScore;
+
+      case 'priority':
+        return getPriorityWeight(a.priority) - getPriorityWeight(b.priority);
+
+      case 'slaDeadline':
+        return getSlaSortValue(a.slaDeadline) - getSlaSortValue(b.slaDeadline);
+
+      case 'createdAt':
+      default:
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    }
   });
 
   return order === 'asc' ? sorted : sorted.reverse();
@@ -64,6 +94,10 @@ function filterOperations(items: OperationRecord[], url: URL): OperationRecord[]
   const riskLevel = url.searchParams.get('riskLevel') as OperationRiskLevel | null;
   const paymentMethod = url.searchParams.get('paymentMethod') as PaymentMethod | null;
   const country = url.searchParams.get('country');
+  const queue = url.searchParams.get('queue') as CaseQueue | null;
+  const priority = url.searchParams.get('priority') as CasePriority | null;
+  const slaState = url.searchParams.get('slaState');
+  const activeOnly = url.searchParams.get('activeOnly') === 'true';
 
   const minAmount = parseOptionalNumber(url.searchParams.get('minAmount'));
   const maxAmount = parseOptionalNumber(url.searchParams.get('maxAmount'));
@@ -76,6 +110,7 @@ function filterOperations(items: OperationRecord[], url: URL): OperationRecord[]
 
   return items.filter((operation) => {
     const createdAtTimestamp = new Date(operation.createdAt).getTime();
+    const currentSlaState = getSlaState(operation.slaDeadline);
 
     const matchesSearch =
       search.length === 0 ||
@@ -86,6 +121,11 @@ function filterOperations(items: OperationRecord[], url: URL): OperationRecord[]
     const matchesRiskLevel = !riskLevel || operation.riskLevel === riskLevel;
     const matchesPaymentMethod = !paymentMethod || operation.paymentMethod === paymentMethod;
     const matchesCountry = !country || operation.country === country;
+    const matchesQueue = !queue || operation.queue === queue;
+    const matchesPriority = !priority || operation.priority === priority;
+    const matchesSlaState = !slaState || currentSlaState === slaState;
+    const matchesActiveOnly =
+      !activeOnly || (operation.status !== 'approved' && operation.status !== 'blocked');
     const matchesMinAmount = minAmount === undefined || operation.amount >= minAmount;
     const matchesMaxAmount = maxAmount === undefined || operation.amount <= maxAmount;
     const matchesDateFrom = dateFromTimestamp === null || createdAtTimestamp >= dateFromTimestamp;
@@ -97,6 +137,10 @@ function filterOperations(items: OperationRecord[], url: URL): OperationRecord[]
       matchesRiskLevel &&
       matchesPaymentMethod &&
       matchesCountry &&
+      matchesQueue &&
+      matchesPriority &&
+      matchesSlaState &&
+      matchesActiveOnly &&
       matchesMinAmount &&
       matchesMaxAmount &&
       matchesDateFrom &&

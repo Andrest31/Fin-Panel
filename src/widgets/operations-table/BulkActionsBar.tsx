@@ -1,4 +1,4 @@
-import { Button, Paper, Stack, Typography } from '@mui/material';
+import { Button, Paper, Stack, Typography, alpha } from '@mui/material';
 import type { OperationStatus } from '@/entities/operation/api/getOperations';
 
 type BulkActionsBarProps = {
@@ -16,21 +16,28 @@ export function BulkActionsBar({
 }: BulkActionsBarProps) {
   return (
     <Paper
-      variant="outlined"
       sx={{
         p: 2,
         mb: 2,
+        borderRadius: 5,
+        bgcolor: alpha('#ffffff', 0.72),
+        backdropFilter: 'blur(14px)',
       }}
     >
       <Stack
-        direction={{ xs: 'column', md: 'row' }}
+        direction={{ xs: 'column', lg: 'row' }}
         spacing={2}
-        alignItems={{ xs: 'stretch', md: 'center' }}
+        alignItems={{ xs: 'stretch', lg: 'center' }}
         justifyContent="space-between"
       >
-        <Typography variant="body1">Выбрано операций: {selectedCount}</Typography>
+        <div>
+          <Typography variant="subtitle1">Bulk workflow actions</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Selected operations: {selectedCount}
+          </Typography>
+        </div>
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} useFlexGap flexWrap="wrap">
           <Button variant="contained" disabled={isPending} onClick={() => onApply('approved')}>
             Approve
           </Button>
@@ -63,7 +70,7 @@ export function BulkActionsBar({
           </Button>
 
           <Button variant="text" disabled={isPending} onClick={onReset}>
-            Reset
+            Clear selection
           </Button>
         </Stack>
       </Stack>

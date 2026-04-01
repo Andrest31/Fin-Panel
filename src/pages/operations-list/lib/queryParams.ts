@@ -19,10 +19,14 @@ export function mapFiltersToQueryParams(filters: OperationsFilterValues): GetOpe
     dateTo: filters.dateTo || undefined,
     paymentMethod: filters.paymentMethod === 'all' ? undefined : filters.paymentMethod,
     country: filters.country === 'all' ? undefined : filters.country,
+    queue: filters.queue === 'all' ? undefined : filters.queue,
+    priority: filters.priority === 'all' ? undefined : filters.priority,
+    slaState: filters.slaState === 'all' ? undefined : filters.slaState,
+    activeOnly: filters.activeOnly || undefined,
   };
 }
 
 export function formatRefreshedAt(value?: string) {
   if (!value) return '—';
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleTimeString();
 }

@@ -37,6 +37,7 @@ export const caseQueueSchema = z.enum([
 ]);
 
 export const casePrioritySchema = z.enum(['low', 'medium', 'high', 'critical']);
+export const slaStateSchema = z.enum(['healthy', 'at_risk', 'breached', 'resolved']);
 
 export const operationRiskFactorSchema = z.object({
   code: riskFactorCodeSchema,
@@ -63,6 +64,10 @@ export const operationListItemSchema = z.object({
   ipAddress: z.string(),
   reviewer: z.string().nullable(),
   flagReasons: z.array(z.string()),
+  queue: caseQueueSchema,
+  priority: casePrioritySchema,
+  slaDeadline: z.string().nullable(),
+  slaState: slaStateSchema,
 });
 
 export const operationHistoryChangeSchema = z.object({
@@ -113,13 +118,18 @@ export const operationDetailsSchema = operationListItemSchema.extend({
   recommendedAction: z.string(),
   analystSummary: z.string(),
   assignee: caseAssigneeSchema.nullable(),
-  queue: caseQueueSchema,
-  priority: casePrioritySchema,
-  slaDeadline: z.string().nullable(),
   collaborationNotes: z.array(collaborationNoteSchema),
 });
 
-export const operationsSortBySchema = z.enum(['createdAt', 'amount', 'merchant']);
+export const operationsSortBySchema = z.enum([
+  'createdAt',
+  'amount',
+  'merchant',
+  'riskScore',
+  'priority',
+  'slaDeadline',
+]);
+
 export const sortOrderSchema = z.enum(['asc', 'desc']);
 export const paymentMethodSchema = z.enum(['card', 'sbp']);
 
@@ -137,6 +147,10 @@ export const getOperationsParamsSchema = z.object({
   dateTo: z.string().optional(),
   paymentMethod: paymentMethodSchema.optional(),
   country: z.string().trim().optional(),
+  queue: caseQueueSchema.optional(),
+  priority: casePrioritySchema.optional(),
+  slaState: slaStateSchema.optional(),
+  activeOnly: z.boolean().optional(),
 });
 
 export const operationsResponseSchema = z.object({
@@ -196,6 +210,7 @@ export type CollaborationNote = z.infer<typeof collaborationNoteSchema>;
 export type CollaboratorRole = z.infer<typeof collaboratorRoleSchema>;
 export type CaseQueue = z.infer<typeof caseQueueSchema>;
 export type CasePriority = z.infer<typeof casePrioritySchema>;
+export type SlaState = z.infer<typeof slaStateSchema>;
 
 export type OperationDecisionPayload = {
   status: OperationStatus;

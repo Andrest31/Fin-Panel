@@ -37,6 +37,10 @@ function createOperationsSearchParams(params: GetOperationsParams): URLSearchPar
   if (parsedParams.dateTo) searchParams.set('dateTo', parsedParams.dateTo);
   if (parsedParams.paymentMethod) searchParams.set('paymentMethod', parsedParams.paymentMethod);
   if (parsedParams.country) searchParams.set('country', parsedParams.country);
+  if (parsedParams.queue) searchParams.set('queue', parsedParams.queue);
+  if (parsedParams.priority) searchParams.set('priority', parsedParams.priority);
+  if (parsedParams.slaState) searchParams.set('slaState', parsedParams.slaState);
+  if (parsedParams.activeOnly) searchParams.set('activeOnly', 'true');
 
   return searchParams;
 }

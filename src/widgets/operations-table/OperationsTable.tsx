@@ -6,6 +6,7 @@ import {
   Paper,
   Stack,
   Typography,
+  alpha,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -19,9 +20,9 @@ type OperationsTableProps = {
   highlightedIds?: string[];
 };
 
-const ROW_HEIGHT = 68;
+const ROW_HEIGHT = 76;
 const OVERSCAN = 8;
-const VIEWPORT_HEIGHT = 560;
+const VIEWPORT_HEIGHT = 620;
 
 function getRiskChipColor(riskLevel: Operation['riskLevel']) {
   if (riskLevel === 'high') return 'error';
@@ -34,6 +35,38 @@ function getStatusChipColor(status: Operation['status']) {
   if (status === 'blocked' || status === 'flagged') return 'error';
   if (status === 'in_review') return 'warning';
   return 'default';
+}
+
+function getPriorityChipColor(priority: Operation['priority']) {
+  if (priority === 'critical') return 'error';
+  if (priority === 'high') return 'warning';
+  if (priority === 'medium') return 'info';
+  return 'default';
+}
+
+function getSlaChipColor(slaState: Operation['slaState']) {
+  if (slaState === 'breached') return 'error';
+  if (slaState === 'at_risk') return 'warning';
+  if (slaState === 'healthy') return 'success';
+  return 'default';
+}
+
+function formatQueueLabel(queue: Operation['queue']) {
+  if (queue === 'manual_review') return 'Manual review';
+  if (queue === 'senior_review') return 'Senior review';
+  if (queue === 'customer_confirmation') return 'Customer check';
+  return 'Compliance';
+}
+
+function formatSlaLabel(operation: Operation) {
+  if (operation.slaState === 'resolved') return 'Resolved';
+  if (!operation.slaDeadline) return 'No deadline';
+  if (operation.slaState === 'breached') return 'Breached';
+  if (operation.slaState === 'at_risk') return 'At risk';
+  return new Date(operation.slaDeadline).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function OperationsTable({
@@ -64,21 +97,28 @@ export function OperationsTable({
   const totalHeight = operations.length * ROW_HEIGHT;
 
   return (
-    <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+    <Paper
+      sx={{
+        overflow: 'hidden',
+        borderRadius: 6,
+        bgcolor: alpha('#ffffff', 0.74),
+        backdropFilter: 'blur(14px)',
+      }}
+    >
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: '52px 1.6fr 1fr 1fr 1fr 1fr 1.1fr',
+          gridTemplateColumns: '52px 1.7fr 0.95fr 1fr 1fr 1.1fr 1fr 1fr',
           alignItems: 'center',
           gap: 2,
           px: 2,
           py: 1.5,
-          borderBottom: 1,
-          borderColor: 'divider',
           position: 'sticky',
           top: 0,
           zIndex: 2,
-          bgcolor: 'background.paper',
+          bgcolor: alpha('#f8faff', 0.92),
+          borderBottom: '1px solid',
+          borderColor: 'divider',
         }}
       >
         <Checkbox
@@ -87,10 +127,11 @@ export function OperationsTable({
           indeterminate={selectedIds.length > 0 && !allSelected}
           onChange={() => onToggleAll(operations.map((operation) => operation.id))}
         />
-        <Typography variant="subtitle2">Merchant</Typography>
+        <Typography variant="subtitle2">Operation</Typography>
         <Typography variant="subtitle2">Amount</Typography>
-        <Typography variant="subtitle2">Status</Typography>
+        <Typography variant="subtitle2">Workflow</Typography>
         <Typography variant="subtitle2">Risk</Typography>
+        <Typography variant="subtitle2">Queue / SLA</Typography>
         <Typography variant="subtitle2">Customer</Typography>
         <Typography variant="subtitle2">Updated</Typography>
       </Box>
@@ -120,18 +161,18 @@ export function OperationsTable({
                   right: 0,
                   height: ROW_HEIGHT,
                   display: 'grid',
-                  gridTemplateColumns: '52px 1.6fr 1fr 1fr 1fr 1fr 1.1fr',
+                  gridTemplateColumns: '52px 1.7fr 0.95fr 1fr 1fr 1.1fr 1fr 1fr',
                   alignItems: 'center',
                   gap: 2,
                   px: 2,
-                  borderBottom: 1,
+                  borderBottom: '1px solid',
                   borderColor: 'divider',
                   bgcolor: isHighlighted
-                    ? 'rgba(255, 193, 7, 0.12)'
+                    ? alpha('#f59e0b', 0.12)
                     : isSelected
-                      ? 'action.selected'
-                      : 'background.paper',
-                  transition: 'background-color 300ms ease',
+                      ? alpha('#5b6cff', 0.08)
+                      : 'transparent',
+                  transition: 'background-color 240ms ease',
                 }}
               >
                 <Checkbox
@@ -140,17 +181,20 @@ export function OperationsTable({
                   onChange={() => onToggleOne(operation.id)}
                 />
 
-                <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                <Stack spacing={0.35} sx={{ minWidth: 0 }}>
                   <Link
                     component={RouterLink}
                     to={`/operations/${operation.id}`}
-                    underline="hover"
+                    underline="none"
                     color="inherit"
                     sx={{
-                      fontWeight: 600,
+                      fontWeight: 700,
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
+                      '&:hover': {
+                        color: 'primary.main',
+                      },
                     }}
                   >
                     {operation.merchant}
@@ -161,29 +205,59 @@ export function OperationsTable({
                   </Typography>
                 </Stack>
 
-                <Typography variant="body2">
-                  {operation.amount} {operation.currency}
-                </Typography>
-
-                <Chip
-                  size="small"
-                  label={operation.status}
-                  color={getStatusChipColor(operation.status)}
-                />
-
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Chip
-                    size="small"
-                    label={operation.riskLevel}
-                    color={getRiskChipColor(operation.riskLevel)}
-                  />
-                  <Chip size="small" variant="outlined" label={operation.riskScore} />
-                  {isHighlighted ? <Chip size="small" color="warning" label="new" /> : null}
+                <Stack spacing={0.35}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {operation.amount} {operation.currency}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {operation.paymentMethod.toUpperCase()}
+                  </Typography>
                 </Stack>
 
-                <Typography variant="body2" noWrap>
-                  {operation.customerId}
-                </Typography>
+                <Stack spacing={0.6}>
+                  <Chip
+                    size="small"
+                    label={operation.status}
+                    color={getStatusChipColor(operation.status)}
+                  />
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={operation.priority}
+                    color={getPriorityChipColor(operation.priority)}
+                  />
+                </Stack>
+
+                <Stack spacing={0.6}>
+                  <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+                    <Chip
+                      size="small"
+                      label={operation.riskLevel}
+                      color={getRiskChipColor(operation.riskLevel)}
+                    />
+                    <Chip size="small" variant="outlined" label={`score ${operation.riskScore}`} />
+                  </Stack>
+
+                  {isHighlighted ? <Chip size="small" color="warning" label="new event" /> : null}
+                </Stack>
+
+                <Stack spacing={0.6} sx={{ minWidth: 0 }}>
+                  <Chip size="small" variant="outlined" label={formatQueueLabel(operation.queue)} />
+                  <Chip
+                    size="small"
+                    color={getSlaChipColor(operation.slaState)}
+                    label={`SLA: ${formatSlaLabel(operation)}`}
+                  />
+                </Stack>
+
+                <Stack spacing={0.35} sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" noWrap>
+                    {operation.customerId}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {operation.country}, {operation.city}
+                  </Typography>
+                </Stack>
 
                 <Typography variant="body2" color="text.secondary" noWrap>
                   {new Date(operation.updatedAt).toLocaleString()}

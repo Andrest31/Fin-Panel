@@ -7,16 +7,44 @@ import {
   type OperationsFilterValues,
   type OperationsSortBy,
   type PaymentMethodFilter,
+  type PriorityFilter,
+  type QueueFilter,
+  type QueuePreset,
+  type SlaStateFilter,
   type SortOrder,
 } from '../model/types';
 
 const allowedStatuses: OperationStatus[] = ['all', 'new', 'in_review', 'approved', 'blocked', 'flagged'];
 const allowedRiskLevels: OperationRiskLevel[] = ['all', 'low', 'medium', 'high'];
-const allowedSortBy: OperationsSortBy[] = ['createdAt', 'amount', 'merchant'];
+const allowedSortBy: OperationsSortBy[] = [
+  'createdAt',
+  'amount',
+  'merchant',
+  'riskScore',
+  'priority',
+  'slaDeadline',
+];
 const allowedOrder: SortOrder[] = ['asc', 'desc'];
 const allowedPaymentMethods: PaymentMethodFilter[] = ['all', 'card', 'sbp'];
 const allowedCountries: CountryFilter[] = ['all', 'RU'];
-const allowedPageSizes = [5, 10, 25, 50];
+const allowedQueues: QueueFilter[] = [
+  'all',
+  'manual_review',
+  'senior_review',
+  'compliance',
+  'customer_confirmation',
+];
+const allowedPriorities: PriorityFilter[] = ['all', 'low', 'medium', 'high', 'critical'];
+const allowedSlaStates: SlaStateFilter[] = ['all', 'healthy', 'at_risk', 'breached', 'resolved'];
+const allowedPresets: QueuePreset[] = [
+  'all',
+  'high_risk',
+  'manual_review',
+  'escalated',
+  'sla_breached',
+  'active',
+];
+const allowedPageSizes = [5, 10, 25, 50, 100];
 
 function isAllowedValue<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
   if (!value) return fallback;
@@ -24,7 +52,9 @@ function isAllowedValue<T extends string>(value: string | null, allowed: readonl
 }
 
 function parsePositiveInteger(value: string | null, fallback: number): number {
-  if (!value) return fallback;
+  if (!value) {
+    return fallback;
+  }
 
   const parsed = Number(value);
 
@@ -33,6 +63,11 @@ function parsePositiveInteger(value: string | null, fallback: number): number {
   }
 
   return parsed;
+}
+
+function parseBoolean(value: string | null, fallback: boolean) {
+  if (value === null) return fallback;
+  return value === 'true';
 }
 
 export function getOperationsFiltersFromSearchParams(searchParams: URLSearchParams): OperationsFilterValues {
@@ -56,6 +91,11 @@ export function getOperationsFiltersFromSearchParams(searchParams: URLSearchPara
       defaultOperationsFilters.paymentMethod,
     ),
     country: isAllowedValue(searchParams.get('country'), allowedCountries, defaultOperationsFilters.country),
+    queue: isAllowedValue(searchParams.get('queue'), allowedQueues, defaultOperationsFilters.queue),
+    priority: isAllowedValue(searchParams.get('priority'), allowedPriorities, defaultOperationsFilters.priority),
+    slaState: isAllowedValue(searchParams.get('slaState'), allowedSlaStates, defaultOperationsFilters.slaState),
+    activeOnly: parseBoolean(searchParams.get('activeOnly'), defaultOperationsFilters.activeOnly),
+    preset: isAllowedValue(searchParams.get('preset'), allowedPresets, defaultOperationsFilters.preset),
   };
 }
 
@@ -81,6 +121,21 @@ export function toOperationsSearchParams(filters: OperationsFilterValues): URLSe
   }
   if (filters.country !== defaultOperationsFilters.country) {
     params.country = filters.country;
+  }
+  if (filters.queue !== defaultOperationsFilters.queue) {
+    params.queue = filters.queue;
+  }
+  if (filters.priority !== defaultOperationsFilters.priority) {
+    params.priority = filters.priority;
+  }
+  if (filters.slaState !== defaultOperationsFilters.slaState) {
+    params.slaState = filters.slaState;
+  }
+  if (filters.activeOnly !== defaultOperationsFilters.activeOnly) {
+    params.activeOnly = String(filters.activeOnly);
+  }
+  if (filters.preset !== defaultOperationsFilters.preset) {
+    params.preset = filters.preset;
   }
 
   return params;

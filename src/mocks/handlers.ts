@@ -1,3 +1,4 @@
+import { getSlaState } from '@/entities/operation/lib/decisioning';
 import { http, HttpResponse } from 'msw';
 import {
   applyCollaborationChange,
@@ -14,10 +15,19 @@ import { getStore } from './lib/store';
 import type {
   CollaborationUpdateRequest,
   OperationsSortBy,
+  OperationRecord,
   OperationStatus,
   SortOrder,
   StatusUpdateRequest,
 } from './lib/types';
+
+function toOperationDetails(operation: OperationRecord, allOperations: OperationRecord[]) {
+  return {
+    ...operation,
+    slaState: getSlaState(operation.slaDeadline),
+    relatedOperations: buildRelatedOperations(allOperations, operation),
+  };
+}
 
 export const handlers = [
   http.get('/api/operations', async ({ request }) => {
@@ -77,10 +87,7 @@ export const handlers = [
 
     applyLiveDetailMutation(store, operation);
 
-    return HttpResponse.json({
-      ...operation,
-      relatedOperations: buildRelatedOperations(store.operations, operation),
-    });
+    return HttpResponse.json(toOperationDetails(operation, store.operations));
   }),
 
   http.patch('/api/operations/:id/status', async ({ params, request }) => {
@@ -122,10 +129,7 @@ export const handlers = [
       );
     }
 
-    return HttpResponse.json({
-      ...operation,
-      relatedOperations: buildRelatedOperations(store.operations, operation),
-    });
+    return HttpResponse.json(toOperationDetails(operation, store.operations));
   }),
 
   http.patch('/api/operations/bulk-status', async ({ request }) => {
@@ -173,7 +177,7 @@ export const handlers = [
         applyStatusChange(operation, body.status, body.reason, body.comment);
         updatedIds.push(id);
       } catch {
-        // skip operations that cannot move to the target status under workflow rules
+        // skip operations that cannot move to the target status
       }
     }
 
@@ -221,9 +225,6 @@ export const handlers = [
 
     applyCollaborationChange(operation, body);
 
-    return HttpResponse.json({
-      ...operation,
-      relatedOperations: buildRelatedOperations(store.operations, operation),
-    });
+    return HttpResponse.json(toOperationDetails(operation, store.operations));
   }),
 ];

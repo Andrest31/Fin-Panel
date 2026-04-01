@@ -1,4 +1,4 @@
-import { Alert, Button, TablePagination } from '@mui/material';
+import { Alert, Button, Paper, TablePagination, alpha } from '@mui/material';
 import type { ChangeEvent } from 'react';
 import type { Operation } from '@/entities/operation/api/getOperations';
 import { OperationsTable } from '@/widgets/operations-table/OperationsTable';
@@ -61,7 +61,13 @@ export function OperationsListContent({
   }
 
   return (
-    <>
+    <Paper
+      sx={{
+        p: 1,
+        borderRadius: 6,
+        bgcolor: alpha('#ffffff', 0.50),
+      }}
+    >
       <OperationsTable
         operations={operations}
         selectedIds={selectedIds}
@@ -79,6 +85,6 @@ export function OperationsListContent({
         onRowsPerPageChange={onRowsPerPageChange}
         rowsPerPageOptions={[5, 10, 25, 50, 100]}
       />
-    </>
+    </Paper>
   );
 }

@@ -1,36 +1,33 @@
-import { Box, Snackbar, Typography } from "@mui/material";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ChangeEvent } from "react";
-import { useMemo, useState } from "react";
-import { DecisionDialog } from "@/features/operation-actions/ui/DecisionDialog";
-import { BulkActionsBar } from "@/widgets/operations-table/BulkActionsBar";
-import { getOperations } from "@/entities/operation/api/getOperations";
-import { useBulkOperationsDecision } from "./hooks/useBulkOperationsDecision";
-import { useOperationsFilters } from "./hooks/useOperationsFilters";
-import { useOperationsRealtime } from "./hooks/useOperationsRealtime";
-import { mapFiltersToQueryParams } from "./lib/queryParams";
-import { OperationsListContent } from "./components/OperationsListContent";
-import { OperationsListToolbar } from "./components/OperationsListToolbar";
+import { Box, Snackbar } from '@mui/material';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ChangeEvent } from 'react';
+import { useMemo, useState } from 'react';
+import { DecisionDialog } from '@/features/operation-actions/ui/DecisionDialog';
+import { getOperations } from '@/entities/operation/api/getOperations';
+import { BulkActionsBar } from '@/widgets/operations-table/BulkActionsBar';
+import { OperationsListContent } from './components/OperationsListContent';
+import { OperationsListToolbar } from './components/OperationsListToolbar';
+import { useBulkOperationsDecision } from './hooks/useBulkOperationsDecision';
+import { useOperationsFilters } from './hooks/useOperationsFilters';
+import { useOperationsRealtime } from './hooks/useOperationsRealtime';
+import { mapFiltersToQueryParams } from './lib/queryParams';
 
 export function OperationsListPage() {
   const queryClient = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [pendingBulkStatus, setPendingBulkStatus] = useState<
-    null | "new" | "in_review" | "approved" | "blocked" | "flagged"
+    null | 'new' | 'in_review' | 'approved' | 'blocked' | 'flagged'
   >(null);
 
   const { filters, updateFilters, resetFilters } = useOperationsFilters();
-  const queryParams = useMemo(
-    () => mapFiltersToQueryParams(filters),
-    [filters],
-  );
+  const queryParams = useMemo(() => mapFiltersToQueryParams(filters), [filters]);
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
-    queryKey: ["operations", queryParams],
+    queryKey: ['operations', queryParams],
     queryFn: () => getOperations(queryParams),
-    refetchInterval: import.meta.env.MODE === "test" ? false : 8000,
+    refetchInterval: import.meta.env.MODE === 'test' ? false : 8000,
     refetchIntervalInBackground: true,
     placeholderData: (previousData) => previousData,
   });
@@ -53,22 +50,22 @@ export function OperationsListPage() {
     onSuccess: (updatedCount) => {
       setSelectedIds([]);
       setPendingBulkStatus(null);
-      setSuccessMessage(`Обновлено операций: ${updatedCount}`);
-      setErrorMessage("");
+      setSuccessMessage(`Updated operations: ${updatedCount}`);
+      setErrorMessage('');
     },
     onError: (message) => {
       setErrorMessage(message);
-      setSuccessMessage("");
+      setSuccessMessage('');
       setPendingBulkStatus(null);
     },
     onConflict: () => {
       setSelectedIds([]);
     },
     onSettled: async (ids) => {
-      await queryClient.invalidateQueries({ queryKey: ["operations"] });
+      await queryClient.invalidateQueries({ queryKey: ['operations'] });
       await Promise.all(
         ids.map((id) =>
-          queryClient.invalidateQueries({ queryKey: ["operation", id] }),
+          queryClient.invalidateQueries({ queryKey: ['operation', id] }),
         ),
       );
     },
@@ -123,21 +120,11 @@ export function OperationsListPage() {
 
   const selectedOperationsLabel =
     visibleSelectedIds.length === 1
-      ? (operations.find((item) => item.id === visibleSelectedIds[0])
-          ?.merchant ?? "operation")
+      ? (operations.find((item) => item.id === visibleSelectedIds[0])?.merchant ?? 'operation')
       : `${visibleSelectedIds.length} operations`;
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" sx={{ mb: 1 }}>
-        Operations Queue
-      </Typography>
-
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Очередь подозрительных операций с live-обновлениями, bulk-обработкой и
-        оптимизацией под большие объёмы данных.
-      </Typography>
-
       <OperationsListToolbar
         filters={filters}
         data={data}
@@ -146,7 +133,7 @@ export function OperationsListPage() {
         isFetching={isFetching}
         isLoading={isLoading}
         realtimeMessage={realtimeMessage}
-        onHideRealtimeMessage={() => setRealtimeMessage("")}
+        onHideRealtimeMessage={() => setRealtimeMessage('')}
         onFiltersChange={handleFiltersChange}
         onResetFilters={handleResetFilters}
       />
@@ -202,14 +189,14 @@ export function OperationsListPage() {
       <Snackbar
         open={Boolean(successMessage)}
         autoHideDuration={3000}
-        onClose={() => setSuccessMessage("")}
+        onClose={() => setSuccessMessage('')}
         message={successMessage}
       />
 
       <Snackbar
         open={Boolean(errorMessage)}
         autoHideDuration={4000}
-        onClose={() => setErrorMessage("")}
+        onClose={() => setErrorMessage('')}
         message={errorMessage}
       />
     </Box>
