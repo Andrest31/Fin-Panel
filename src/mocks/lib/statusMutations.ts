@@ -1,3 +1,7 @@
+import {
+  assertAllowedStatusTransition,
+  syncDerivedOperationFields,
+} from '@/entities/operation/lib/decisioning';
 import type { OperationRecord, OperationStatus } from './types';
 
 function getActionMeta(status: OperationStatus) {
@@ -6,7 +10,6 @@ function getActionMeta(status: OperationStatus) {
       eventType: 'approved',
       defaultComment: 'Operation approved by analyst',
       reviewer: 'analyst_99',
-      recommendedAction: 'Operation was approved after analyst review.',
     };
   }
 
@@ -15,7 +18,6 @@ function getActionMeta(status: OperationStatus) {
       eventType: 'blocked',
       defaultComment: 'Operation blocked by analyst',
       reviewer: 'analyst_99',
-      recommendedAction: 'Operation was blocked after analyst decision.',
     };
   }
 
@@ -24,7 +26,14 @@ function getActionMeta(status: OperationStatus) {
       eventType: 'sent_to_review',
       defaultComment: 'Operation sent to manual review',
       reviewer: 'analyst_99',
-      recommendedAction: 'Operation requires additional manual investigation.',
+    };
+  }
+
+  if (status === 'flagged') {
+    return {
+      eventType: 'flagged',
+      defaultComment: 'Operation flagged for additional checks',
+      reviewer: 'analyst_99',
     };
   }
 
@@ -32,7 +41,6 @@ function getActionMeta(status: OperationStatus) {
     eventType: 'status_changed',
     defaultComment: `Status changed to ${status}`,
     reviewer: 'analyst_99',
-    recommendedAction: `Status changed to ${status}.`,
   };
 }
 
@@ -43,8 +51,21 @@ function applyStatusChange(
   comment?: string,
   actor = 'analyst_99',
 ) {
+  assertAllowedStatusTransition(operation.status, nextStatus);
+
+  const previousStatus = operation.status;
+  const previousQueue = operation.queue;
+  const previousPriority = operation.priority;
+  const previousReviewer = operation.reviewer;
   const now = new Date().toISOString();
   const actionMeta = getActionMeta(nextStatus);
+
+  operation.status = nextStatus;
+  operation.updatedAt = now;
+  operation.reviewer = actionMeta.reviewer;
+  operation.analystSummary = comment?.trim() || operation.analystSummary;
+
+  syncDerivedOperationFields(operation, { now });
 
   operation.history.unshift({
     id: `evt_${Date.now()}_${operation.id}`,
@@ -56,22 +77,26 @@ function applyStatusChange(
     changes: [
       {
         field: 'status',
-        before: operation.status,
+        before: previousStatus,
         after: nextStatus,
       },
       {
         field: 'reviewer',
-        before: operation.reviewer,
+        before: previousReviewer,
         after: actionMeta.reviewer,
+      },
+      {
+        field: 'queue',
+        before: previousQueue,
+        after: operation.queue,
+      },
+      {
+        field: 'priority',
+        before: previousPriority,
+        after: operation.priority,
       },
     ],
   });
-
-  operation.status = nextStatus;
-  operation.updatedAt = now;
-  operation.reviewer = actionMeta.reviewer;
-  operation.analystSummary = comment?.trim() || operation.analystSummary;
-  operation.recommendedAction = actionMeta.recommendedAction;
 }
 
 export { applyStatusChange };

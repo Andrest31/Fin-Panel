@@ -125,7 +125,7 @@ export const paymentMethodSchema = z.enum(['card', 'sbp']);
 
 export const getOperationsParamsSchema = z.object({
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(10),
+  pageSize: z.number().int().min(1).max(250).default(10),
   search: z.string().trim().optional(),
   status: operationStatusSchema.optional(),
   riskLevel: operationRiskLevelSchema.optional(),

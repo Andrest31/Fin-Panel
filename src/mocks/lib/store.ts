@@ -1,3 +1,4 @@
+import { syncDerivedOperationFields } from '@/entities/operation/lib/decisioning';
 import { baseOperations, volumeCounts } from './data';
 import type {
   MockDataVolume,
@@ -22,7 +23,7 @@ function cloneOperation(source: OperationRecord, index: number): OperationRecord
   const statusCycle: OperationStatus[] = ['new', 'in_review', 'approved', 'blocked', 'flagged'];
   const status = statusCycle[index % statusCycle.length];
 
-  return {
+  const operation: OperationRecord = {
     ...structuredClone(source),
     id: `${source.id}_${index + 1}`,
     merchant: index < 12 ? source.merchant : `${source.merchant} ${index + 1}`,
@@ -47,6 +48,8 @@ function cloneOperation(source: OperationRecord, index: number): OperationRecord
       createdAt: new Date(createdAt.getTime() + 30_000 + noteIndex * 30_000).toISOString(),
     })),
   };
+
+  return syncDerivedOperationFields(operation, { now: updatedAt.toISOString() });
 }
 
 function buildDataset(volume: MockDataVolume): OperationRecord[] {

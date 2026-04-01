@@ -10,9 +10,19 @@ import {
   Typography,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
+import {
+  getAvailableDecisionStatuses,
+  type DecisionAction,
+} from '@/entities/operation/lib/decisioning';
 import type { OperationDetails, OperationStatus } from '@/entities/operation/api/getOperations';
 import type { CollaborationAction } from '../model/types';
-import { getPriorityColor, getRiskColor } from '../lib/presentation';
+import {
+  formatSlaLabel,
+  formatWorkflowStage,
+  getPriorityColor,
+  getRiskColor,
+  getSlaChipColor,
+} from '../lib/presentation';
 
 type Props = {
   data: OperationDetails;
@@ -22,6 +32,27 @@ type Props = {
   onOpenCollaboration: (action: CollaborationAction) => void;
 };
 
+const actionLabels: Record<DecisionAction, string> = {
+  approved: 'Approve',
+  in_review: 'Send to review',
+  blocked: 'Block operation',
+  flagged: 'Flag for escalation',
+};
+
+const actionVariants: Record<DecisionAction, 'contained' | 'outlined'> = {
+  approved: 'contained',
+  in_review: 'outlined',
+  blocked: 'outlined',
+  flagged: 'outlined',
+};
+
+const actionColors: Record<DecisionAction, 'primary' | 'warning' | 'error'> = {
+  approved: 'primary',
+  in_review: 'warning',
+  blocked: 'error',
+  flagged: 'warning',
+};
+
 export function OperationDetailsSidebar({
   data,
   isStatusPending,
@@ -29,6 +60,8 @@ export function OperationDetailsSidebar({
   onOpenDecision,
   onOpenCollaboration,
 }: Props) {
+  const availableActions = getAvailableDecisionStatuses(data.status);
+
   return (
     <Stack spacing={3}>
       <Card>
@@ -42,13 +75,15 @@ export function OperationDetailsSidebar({
               label={data.assignee ? `${data.assignee.name} • ${data.assignee.role}` : 'Unassigned'}
               color={data.assignee ? 'info' : 'default'}
             />
+            <Chip label={`Stage: ${formatWorkflowStage(data.status)}`} variant="outlined" />
             <Chip label={`Queue: ${data.queue}`} variant="outlined" />
             <Chip label={`Priority: ${data.priority}`} color={getPriorityColor(data.priority)} />
+            <Chip label={formatSlaLabel(data.slaDeadline)} color={getSlaChipColor(data.slaDeadline)} />
             <Chip
               label={
                 data.slaDeadline
-                  ? `SLA: ${new Date(data.slaDeadline).toLocaleString()}`
-                  : 'SLA: not set'
+                  ? `Deadline: ${new Date(data.slaDeadline).toLocaleString()}`
+                  : 'Deadline: not required'
               }
               variant="outlined"
             />
@@ -108,35 +143,27 @@ export function OperationDetailsSidebar({
           </Stack>
 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Analyst actions
+            Allowed next actions
           </Typography>
 
           <Stack spacing={1}>
-            <Button
-              variant="contained"
-              disabled={isStatusPending || data.status === 'approved'}
-              onClick={() => onOpenDecision('approved')}
-            >
-              Approve
-            </Button>
+            {availableActions.map((action) => (
+              <Button
+                key={action}
+                variant={actionVariants[action]}
+                color={actionColors[action]}
+                disabled={isStatusPending}
+                onClick={() => onOpenDecision(action)}
+              >
+                {actionLabels[action]}
+              </Button>
+            ))}
 
-            <Button
-              variant="outlined"
-              color="warning"
-              disabled={isStatusPending || data.status === 'in_review'}
-              onClick={() => onOpenDecision('in_review')}
-            >
-              Send to review
-            </Button>
-
-            <Button
-              variant="outlined"
-              color="error"
-              disabled={isStatusPending || data.status === 'blocked'}
-              onClick={() => onOpenDecision('blocked')}
-            >
-              Block operation
-            </Button>
+            {availableActions.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No workflow transitions available from the current state.
+              </Typography>
+            ) : null}
           </Stack>
 
           {isStatusPending ? (
@@ -207,7 +234,9 @@ export function OperationDetailsSidebar({
                       <Chip size="small" label={operation.status} />
                     </Stack>
                   }
-                  secondary={`${operation.amount} ${operation.currency} • ${new Date(operation.createdAt).toLocaleString()}`}
+                  secondary={`${operation.amount} ${operation.currency} • ${new Date(
+                    operation.createdAt,
+                  ).toLocaleString()}`}
                 />
               </ListItem>
             ))}

@@ -1,4 +1,4 @@
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse } from 'msw';
 import {
   applyCollaborationChange,
   applyLiveDetailMutation,
@@ -8,19 +8,19 @@ import {
   filterOperations,
   sortOperations,
   toListItem,
-} from "./lib/operations";
-import { maybeApplyScenario, getScenario, getVolume } from "./lib/scenario";
-import { getStore } from "./lib/store";
+} from './lib/operations';
+import { getScenario, getVolume, maybeApplyScenario } from './lib/scenario';
+import { getStore } from './lib/store';
 import type {
   CollaborationUpdateRequest,
   OperationsSortBy,
   OperationStatus,
   SortOrder,
   StatusUpdateRequest,
-} from "./lib/types";
+} from './lib/types';
 
 export const handlers = [
-  http.get("/api/operations", async ({ request }) => {
+  http.get('/api/operations', async ({ request }) => {
     const scenarioResponse = await maybeApplyScenario(request);
 
     if (scenarioResponse) {
@@ -34,17 +34,13 @@ export const handlers = [
 
     const url = new URL(request.url);
 
-    const rawPage = Number(url.searchParams.get("page") ?? "1");
-    const rawPageSize = Number(url.searchParams.get("pageSize") ?? "10");
-    const sortBy =
-      (url.searchParams.get("sortBy") as OperationsSortBy | null) ??
-      "createdAt";
-    const order = (url.searchParams.get("order") as SortOrder | null) ?? "desc";
+    const rawPage = Number(url.searchParams.get('page') ?? '1');
+    const rawPageSize = Number(url.searchParams.get('pageSize') ?? '10');
+    const sortBy = (url.searchParams.get('sortBy') as OperationsSortBy | null) ?? 'createdAt';
+    const order = (url.searchParams.get('order') as SortOrder | null) ?? 'desc';
 
     const page = Number.isNaN(rawPage) ? 1 : Math.max(1, rawPage);
-    const pageSize = Number.isNaN(rawPageSize)
-      ? 10
-      : Math.min(100, Math.max(1, rawPageSize));
+    const pageSize = Number.isNaN(rawPageSize) ? 10 : Math.min(250, Math.max(1, rawPageSize));
 
     const filtered = filterOperations(store.operations, url);
     const sorted = sortOperations(filtered, sortBy, order);
@@ -61,7 +57,7 @@ export const handlers = [
     });
   }),
 
-  http.get("/api/operations/:id", async ({ params, request }) => {
+  http.get('/api/operations/:id', async ({ params, request }) => {
     const scenarioResponse = await maybeApplyScenario(request);
 
     if (scenarioResponse) {
@@ -76,10 +72,7 @@ export const handlers = [
     const operation = store.operations.find((item) => item.id === params.id);
 
     if (!operation) {
-      return HttpResponse.json(
-        { message: "Operation not found" },
-        { status: 404 },
-      );
+      return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
     }
 
     applyLiveDetailMutation(store, operation);
@@ -90,7 +83,7 @@ export const handlers = [
     });
   }),
 
-  http.patch("/api/operations/:id/status", async ({ params, request }) => {
+  http.patch('/api/operations/:id/status', async ({ params, request }) => {
     const scenarioResponse = await maybeApplyScenario(request);
 
     if (scenarioResponse) {
@@ -103,15 +96,12 @@ export const handlers = [
     const operation = store.operations.find((item) => item.id === params.id);
 
     if (!operation) {
-      return HttpResponse.json(
-        { message: "Operation not found" },
-        { status: 404 },
-      );
+      return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
     }
 
-    if (getScenario(request) === "conflict") {
+    if (getScenario(request) === 'conflict') {
       return HttpResponse.json(
-        { message: "Operation was already updated by another analyst" },
+        { message: 'Operation was already updated by another analyst' },
         { status: 409 },
       );
     }
@@ -120,13 +110,17 @@ export const handlers = [
     const nextStatus = body.status;
 
     if (!nextStatus) {
+      return HttpResponse.json({ message: 'Status is required' }, { status: 400 });
+    }
+
+    try {
+      applyStatusChange(operation, nextStatus, body.reason, body.comment);
+    } catch (error) {
       return HttpResponse.json(
-        { message: "Status is required" },
+        { message: error instanceof Error ? error.message : 'Invalid workflow transition' },
         { status: 400 },
       );
     }
-
-    applyStatusChange(operation, nextStatus, body.reason, body.comment);
 
     return HttpResponse.json({
       ...operation,
@@ -134,16 +128,16 @@ export const handlers = [
     });
   }),
 
-  http.patch("/api/operations/bulk-status", async ({ request }) => {
+  http.patch('/api/operations/bulk-status', async ({ request }) => {
     const scenarioResponse = await maybeApplyScenario(request);
 
     if (scenarioResponse) {
       return scenarioResponse;
     }
 
-    if (getScenario(request) === "conflict") {
+    if (getScenario(request) === 'conflict') {
       return HttpResponse.json(
-        { message: "Some operations were already updated by another analyst" },
+        { message: 'Some operations were already updated by another analyst' },
         { status: 409 },
       );
     }
@@ -159,29 +153,36 @@ export const handlers = [
     };
 
     if (!body.ids?.length) {
-      return HttpResponse.json(
-        { message: "Ids are required" },
-        { status: 400 },
-      );
+      return HttpResponse.json({ message: 'Ids are required' }, { status: 400 });
     }
 
     if (!body.status) {
-      return HttpResponse.json(
-        { message: "Status is required" },
-        { status: 400 },
-      );
+      return HttpResponse.json({ message: 'Status is required' }, { status: 400 });
     }
 
     const updatedIds: string[] = [];
 
-    body.ids.forEach((id) => {
+    for (const id of body.ids) {
       const operation = store.operations.find((item) => item.id === id);
 
-      if (!operation) return;
+      if (!operation) {
+        continue;
+      }
 
-      applyStatusChange(operation, body.status!, body.reason, body.comment);
-      updatedIds.push(id);
-    });
+      try {
+        applyStatusChange(operation, body.status, body.reason, body.comment);
+        updatedIds.push(id);
+      } catch {
+        // skip operations that cannot move to the target status under workflow rules
+      }
+    }
+
+    if (updatedIds.length === 0) {
+      return HttpResponse.json(
+        { message: 'No selected operations can be moved to the requested workflow state' },
+        { status: 400 },
+      );
+    }
 
     return HttpResponse.json({
       updatedIds,
@@ -189,49 +190,40 @@ export const handlers = [
     });
   }),
 
-  http.patch(
-    "/api/operations/:id/collaboration",
-    async ({ params, request }) => {
-      const scenarioResponse = await maybeApplyScenario(request);
+  http.patch('/api/operations/:id/collaboration', async ({ params, request }) => {
+    const scenarioResponse = await maybeApplyScenario(request);
 
-      if (scenarioResponse) {
-        return scenarioResponse;
-      }
+    if (scenarioResponse) {
+      return scenarioResponse;
+    }
 
-      const volume = getVolume(request);
-      const store = getStore(volume);
+    const volume = getVolume(request);
+    const store = getStore(volume);
 
-      const operation = store.operations.find((item) => item.id === params.id);
+    const operation = store.operations.find((item) => item.id === params.id);
 
-      if (!operation) {
-        return HttpResponse.json(
-          { message: "Operation not found" },
-          { status: 404 },
-        );
-      }
+    if (!operation) {
+      return HttpResponse.json({ message: 'Operation not found' }, { status: 404 });
+    }
 
-      if (getScenario(request) === "conflict") {
-        return HttpResponse.json(
-          { message: "Case was already updated by another specialist" },
-          { status: 409 },
-        );
-      }
+    if (getScenario(request) === 'conflict') {
+      return HttpResponse.json(
+        { message: 'Case was already updated by another specialist' },
+        { status: 409 },
+      );
+    }
 
-      const body = (await request.json()) as CollaborationUpdateRequest;
+    const body = (await request.json()) as CollaborationUpdateRequest;
 
-      if (!body.action || !body.reason || !body.note) {
-        return HttpResponse.json(
-          { message: "Invalid collaboration payload" },
-          { status: 400 },
-        );
-      }
+    if (!body.action || !body.reason || !body.note) {
+      return HttpResponse.json({ message: 'Invalid collaboration payload' }, { status: 400 });
+    }
 
-      applyCollaborationChange(operation, body);
+    applyCollaborationChange(operation, body);
 
-      return HttpResponse.json({
-        ...operation,
-        relatedOperations: buildRelatedOperations(store.operations, operation),
-      });
-    },
-  ),
+    return HttpResponse.json({
+      ...operation,
+      relatedOperations: buildRelatedOperations(store.operations, operation),
+    });
+  }),
 ];

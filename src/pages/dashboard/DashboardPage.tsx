@@ -23,7 +23,7 @@ export function DashboardPage() {
     queryFn: () =>
       getOperations({
         page: 1,
-        pageSize: 100,
+        pageSize: 250,
         sortBy: 'createdAt',
         order: 'desc',
       }),

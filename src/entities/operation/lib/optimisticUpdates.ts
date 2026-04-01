@@ -1,3 +1,7 @@
+import {
+  assertAllowedStatusTransition,
+  syncDerivedOperationFields,
+} from '@/entities/operation/lib/decisioning';
 import type {
   GetOperationsResponse,
   Operation,
@@ -22,6 +26,8 @@ function getEventType(status: OperationStatus): string {
       return 'blocked';
     case 'in_review':
       return 'sent_to_review';
+    case 'flagged':
+      return 'flagged';
     default:
       return 'status_changed';
   }
@@ -57,34 +63,42 @@ export function applyOptimisticDecisionToOperation(
   operation: Operation,
   payload: DecisionPayload,
 ): Operation {
-  return {
-    ...operation,
-    status: payload.status,
-    updatedAt: new Date().toISOString(),
-    reviewer: OPTIMISTIC_ACTOR,
-  };
+  try {
+    assertAllowedStatusTransition(operation.status, payload.status);
+
+    return {
+      ...operation,
+      status: payload.status,
+      updatedAt: new Date().toISOString(),
+      reviewer: OPTIMISTIC_ACTOR,
+    };
+  } catch {
+    return operation;
+  }
 }
 
 export function applyOptimisticDecisionToOperationDetails(
   operation: OperationDetails,
   payload: DecisionPayload,
 ): OperationDetails {
-  const optimisticEvent = createOptimisticHistoryEvent(operation, payload);
+  try {
+    assertAllowedStatusTransition(operation.status, payload.status);
 
-  return {
-    ...operation,
-    status: payload.status,
-    updatedAt: optimisticEvent.timestamp,
-    reviewer: OPTIMISTIC_ACTOR,
-    analystSummary: payload.comment,
-    recommendedAction:
-      payload.status === 'blocked'
-        ? 'Operation was blocked after analyst decision.'
-        : payload.status === 'approved'
-          ? 'Operation was approved after analyst review.'
-          : 'Operation requires additional manual investigation.',
-    history: [optimisticEvent, ...operation.history],
-  };
+    const optimisticEvent = createOptimisticHistoryEvent(operation, payload);
+
+    const nextOperation: OperationDetails = {
+      ...operation,
+      status: payload.status,
+      updatedAt: optimisticEvent.timestamp,
+      reviewer: OPTIMISTIC_ACTOR,
+      analystSummary: payload.comment,
+      history: [optimisticEvent, ...operation.history],
+    };
+
+    return syncDerivedOperationFields(nextOperation, { now: optimisticEvent.timestamp });
+  } catch {
+    return operation;
+  }
 }
 
 export function applyOptimisticDecisionToOperationsList(
@@ -94,11 +108,13 @@ export function applyOptimisticDecisionToOperationsList(
 ): Operation[] {
   const selectedIds = new Set(ids);
 
-  return operations.map((operation) =>
-    selectedIds.has(operation.id)
-      ? applyOptimisticDecisionToOperation(operation, payload)
-      : operation,
-  );
+  return operations.map((operation) => {
+    if (!selectedIds.has(operation.id)) {
+      return operation;
+    }
+
+    return applyOptimisticDecisionToOperation(operation, payload);
+  });
 }
 
 export function applyOptimisticDecisionToOperationsResponse(

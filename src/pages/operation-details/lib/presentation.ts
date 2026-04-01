@@ -1,3 +1,4 @@
+import { getSlaState } from '@/entities/operation/lib/decisioning';
 import type {
   OperationRiskFactor,
   OperationRiskLevel,
@@ -26,10 +27,38 @@ export function getPriorityColor(priority: 'low' | 'medium' | 'high' | 'critical
 
 export function getRecommendedActionColor(action: string) {
   if (action.toLowerCase().includes('block')) return 'error.main';
-  if (action.toLowerCase().includes('manual')) return 'warning.main';
+  if (action.toLowerCase().includes('senior review') || action.toLowerCase().includes('manual')) {
+    return 'warning.main';
+  }
   return 'success.main';
 }
 
 export function formatRiskFactorContribution(factor: OperationRiskFactor) {
   return `+${factor.contribution}`;
+}
+
+export function formatWorkflowStage(status: OperationStatus) {
+  if (status === 'new') return 'Incoming queue';
+  if (status === 'flagged') return 'Escalated review';
+  if (status === 'in_review') return 'Manual review';
+  if (status === 'approved') return 'Resolved / approved';
+  return 'Resolved / blocked';
+}
+
+export function formatSlaLabel(slaDeadline: string | null) {
+  const slaState = getSlaState(slaDeadline);
+
+  if (slaState === 'resolved') return 'SLA resolved';
+  if (slaState === 'breached') return 'SLA breached';
+  if (slaState === 'at_risk') return 'SLA at risk';
+  return 'SLA healthy';
+}
+
+export function getSlaChipColor(slaDeadline: string | null) {
+  const slaState = getSlaState(slaDeadline);
+
+  if (slaState === 'breached') return 'error';
+  if (slaState === 'at_risk') return 'warning';
+  if (slaState === 'healthy') return 'success';
+  return 'default';
 }

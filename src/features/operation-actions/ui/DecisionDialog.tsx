@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -45,6 +46,14 @@ function getReasonOptions(status: OperationStatus | null) {
     ];
   }
 
+  if (status === 'flagged') {
+    return [
+      { value: 'risk_recheck', label: 'Risk re-check required' },
+      { value: 'queue_breach', label: 'Queue SLA breach' },
+      { value: 'analyst_escalation', label: 'Analyst escalation' },
+    ];
+  }
+
   return [];
 }
 
@@ -52,6 +61,23 @@ function getDefaultComment(status: OperationStatus | null) {
   if (status === 'approved') return 'Signals reviewed, operation looks legitimate.';
   if (status === 'in_review') return 'Additional analyst verification required.';
   if (status === 'blocked') return 'Operation blocked due to fraud indicators.';
+  if (status === 'flagged') return 'Case flagged for stricter queue routing and re-check.';
+  return '';
+}
+
+function getWorkflowHint(status: OperationStatus | null) {
+  if (status === 'approved') {
+    return 'Resolved state. SLA will be cleared and the case will move out of active review.';
+  }
+  if (status === 'blocked') {
+    return 'Highest-severity outcome. The case will be routed to compliance tracking.';
+  }
+  if (status === 'in_review') {
+    return 'Manual review state. The case stays active with queue and SLA enforcement.';
+  }
+  if (status === 'flagged') {
+    return 'Escalated review state. Use it when more scrutiny is needed before final action.';
+  }
   return '';
 }
 
@@ -98,6 +124,8 @@ export function DecisionDialog({
 
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          {status ? <Alert severity="info">{getWorkflowHint(status)}</Alert> : null}
+
           <TextField
             select
             label="Reason"

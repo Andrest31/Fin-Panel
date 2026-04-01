@@ -31,11 +31,7 @@ export function BulkActionsBar({
         <Typography variant="body1">Выбрано операций: {selectedCount}</Typography>
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          <Button
-            variant="contained"
-            disabled={isPending}
-            onClick={() => onApply('approved')}
-          >
+          <Button variant="contained" disabled={isPending} onClick={() => onApply('approved')}>
             Approve
           </Button>
 
@@ -46,6 +42,15 @@ export function BulkActionsBar({
             onClick={() => onApply('in_review')}
           >
             Send to review
+          </Button>
+
+          <Button
+            variant="outlined"
+            color="warning"
+            disabled={isPending}
+            onClick={() => onApply('flagged')}
+          >
+            Flag
           </Button>
 
           <Button

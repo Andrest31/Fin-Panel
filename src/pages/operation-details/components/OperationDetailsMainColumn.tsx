@@ -11,8 +11,8 @@ import {
   Typography,
 } from '@mui/material';
 import type { OperationDetails } from '@/entities/operation/api/getOperations';
+import { buildExplainabilityItems } from '@/entities/operation/lib/decisioning';
 import {
-  formatRiskFactorContribution,
   getRecommendedActionColor,
   getRiskColor,
   getStatusColor,
@@ -29,6 +29,9 @@ export function OperationDetailsMainColumn({
   highImpactFactors,
   highlightedHistoryEventIdSet,
 }: Props) {
+  const explainabilityItems = buildExplainabilityItems(data.riskFactors, data);
+  const topReasons = explainabilityItems.slice(0, 3);
+
   return (
     <Stack spacing={3}>
       <Card>
@@ -51,6 +54,7 @@ export function OperationDetailsMainColumn({
                 <Chip label={`${data.amount} ${data.currency}`} />
                 <Chip label={data.status} color={getStatusColor(data.status)} />
                 <Chip label={data.riskLevel} color={getRiskColor(data.riskLevel)} />
+                <Chip label={`score ${data.riskScore}/100`} variant="outlined" />
               </Stack>
             </Stack>
 
@@ -99,55 +103,86 @@ export function OperationDetailsMainColumn({
             Explainable risk scoring
           </Typography>
 
-          <Stack spacing={2}>
-            {data.riskFactors.map((factor) => (
-              <div key={factor.code}>
-                <Stack
-                  direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  sx={{ mb: 0.5 }}
-                >
-                  <Typography variant="subtitle2">{factor.label}</Typography>
-                  <Chip
-                    size="small"
-                    label={formatRiskFactorContribution(factor)}
-                    color={factor.contribution >= 20 ? 'error' : 'default'}
-                  />
-                </Stack>
+          <Stack spacing={2.5}>
+            <div>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2">Composite score</Typography>
+                <Chip label={`${data.riskScore}/100`} color={getRiskColor(data.riskLevel)} />
+              </Stack>
 
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  {factor.value}
-                </Typography>
+              <LinearProgress
+                variant="determinate"
+                value={data.riskScore}
+                color={
+                  data.riskLevel === 'high'
+                    ? 'error'
+                    : data.riskLevel === 'medium'
+                      ? 'warning'
+                      : 'success'
+                }
+                sx={{ height: 10, borderRadius: 999 }}
+              />
+            </div>
 
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.min(100, factor.contribution * 3)}
-                  color={factor.contribution >= 20 ? 'error' : 'primary'}
-                />
-              </div>
-            ))}
-          </Stack>
+            <div>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Why this score is high
+              </Typography>
 
-          <Divider sx={{ my: 3 }} />
+              <Stack spacing={1}>
+                {topReasons.map((reason) => (
+                  <Stack
+                    key={`${reason.code}_${reason.title}`}
+                    direction="row"
+                    justifyContent="space-between"
+                    spacing={2}
+                    sx={{
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      px: 1.5,
+                      py: 1,
+                    }}
+                  >
+                    <div>
+                      <Typography variant="subtitle2">{reason.title}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {reason.description}
+                      </Typography>
+                    </div>
 
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            High impact signals
-          </Typography>
+                    <Chip
+                      size="small"
+                      color={reason.contribution >= 20 ? 'error' : 'warning'}
+                      label={`+${reason.contribution}`}
+                    />
+                  </Stack>
+                ))}
+              </Stack>
+            </div>
 
-          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-            {highImpactFactors.length > 0 ? (
-              highImpactFactors.map((factor) => (
-                <Chip
-                  key={factor.code}
-                  label={`${factor.label} (${factor.contribution})`}
-                  color="error"
-                  variant="outlined"
-                />
-              ))
-            ) : (
-              <Typography variant="body2">No high impact factors</Typography>
-            )}
+            <Divider />
+
+            <div>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                High impact signals
+              </Typography>
+
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {highImpactFactors.length > 0 ? (
+                  highImpactFactors.map((factor) => (
+                    <Chip
+                      key={factor.code}
+                      label={`${factor.label} (${factor.contribution})`}
+                      color="error"
+                      variant="outlined"
+                    />
+                  ))
+                ) : (
+                  <Typography variant="body2">No high impact factors</Typography>
+                )}
+              </Stack>
+            </div>
           </Stack>
         </CardContent>
       </Card>
@@ -191,8 +226,9 @@ export function OperationDetailsMainColumn({
                   divider={index < data.history.length - 1}
                   sx={{
                     alignItems: 'flex-start',
-                    transition: 'background-color 0.3s ease',
-                    bgcolor: isHighlighted ? 'warning.light' : 'transparent',
+                    px: 0,
+                    transition: 'background-color 300ms ease',
+                    bgcolor: isHighlighted ? 'rgba(255, 193, 7, 0.08)' : 'transparent',
                   }}
                 >
                   <ListItemText
@@ -204,19 +240,17 @@ export function OperationDetailsMainColumn({
                       >
                         <Typography variant="subtitle2">{event.type}</Typography>
                         <Chip size="small" label={event.actor} variant="outlined" />
-                        {event.reason ? (
-                          <Chip size="small" label={`Reason: ${event.reason}`} color="warning" />
-                        ) : null}
+                        {event.reason ? <Chip size="small" label={event.reason} /> : null}
                       </Stack>
                     }
                     secondary={
-                      <Stack spacing={1} sx={{ mt: 1 }}>
-                        <Typography variant="body2">
+                      <>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                           {new Date(event.timestamp).toLocaleString()} — {event.comment}
                         </Typography>
 
-                        {event.changes.length > 0 ? (
-                          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                        {event.changes?.length ? (
+                          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
                             {event.changes.map((change) => (
                               <Chip
                                 key={`${event.id}_${change.field}`}
@@ -227,7 +261,7 @@ export function OperationDetailsMainColumn({
                             ))}
                           </Stack>
                         ) : null}
-                      </Stack>
+                      </>
                     }
                   />
                 </ListItem>
